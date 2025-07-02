@@ -84,9 +84,6 @@ app.log
 *.log
 
 # Azure deployment
-requirements.txt
-
-# Python version file
-.python-version
+# (requirements.txt and .python-version are now tracked for deployment)
 
 DEPLOYMENT.md

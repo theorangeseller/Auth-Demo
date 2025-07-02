@@ -34,26 +34,16 @@ jobs:
       run: |
         uv sync
 
-    - name: Create requirements.txt for Azure
+    - name: Verify requirements.txt exists and content
       run: |
-        # Create requirements.txt manually to ensure compatibility
-        echo "flask>=3.0.0" > requirements.txt
-        echo "flask-session>=0.5.0" >> requirements.txt
-        echo "msal>=1.24.0" >> requirements.txt
-        echo "requests>=2.31.0" >> requirements.txt
-        echo "python-jose[cryptography]>=3.3.0" >> requirements.txt
-        echo "cryptography>=41.0.0" >> requirements.txt
-        echo "python-dotenv>=1.0.0" >> requirements.txt
-        echo "pyjwt>=2.8.0" >> requirements.txt
-        echo "gunicorn>=21.2.0" >> requirements.txt
-        
-    - name: Verify requirements.txt content
-      run: |
-        echo "Generated requirements.txt content:"
+        echo "Requirements.txt content:"
         cat requirements.txt
         echo ""
         echo "Checking for pyjwt..."
-        grep -i jwt requirements.txt || echo "JWT dependency not found!"
+        grep -i jwt requirements.txt
+        echo ""
+        echo "File size and permissions:"
+        ls -la requirements.txt
 
     - name: Upload artifact for deployment job
       uses: actions/upload-artifact@v4
@@ -80,6 +70,17 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: python-app
+
+    - name: Verify files before deployment
+      run: |
+        echo "Files being deployed:"
+        ls -la
+        echo ""
+        echo "Requirements.txt content:"
+        cat requirements.txt
+        echo ""
+        echo "Python version file:"
+        cat .python-version
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v3
