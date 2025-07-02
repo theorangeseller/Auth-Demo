@@ -80,8 +80,70 @@ def _build_auth_code_flow(authority=None, scopes=None):
         scopes or DEFAULT_SCOPE,
         redirect_uri=config['redirect_uri'])
 
+def fetch_azure_federation_metadata(tenant_id):
+    """Fetch Azure AD federation metadata for the given tenant"""
+    try:
+        metadata_url = f"https://login.microsoftonline.com/{tenant_id}/federationmetadata/2007-06/federationmetadata.xml"
+        
+        response = requests.get(metadata_url, timeout=10)
+        response.raise_for_status()
+        
+        # Parse the XML metadata
+        root = ET.fromstring(response.content)
+        
+        # Define namespaces
+        namespaces = {
+            'fed': 'http://docs.oasis-open.org/wsfed/federation/200706',
+            'saml': 'urn:oasis:names:tc:SAML:2.0:assertion',
+            'md': 'urn:oasis:names:tc:SAML:2.0:metadata',
+            'ds': 'http://www.w3.org/2000/09/xmldsig#'
+        }
+        
+        metadata = {
+            'tenant_id': tenant_id,
+            'metadata_url': metadata_url,
+            'entity_id': None,
+            'sso_url': None,
+            'slo_url': None,
+            'signing_certificates': [],
+            'fetched_at': datetime.utcnow().isoformat()
+        }
+        
+        # Extract entity ID
+        entity_id = root.get('entityID')
+        if entity_id:
+            metadata['entity_id'] = entity_id
+        
+        # Find SSO and SLO endpoints
+        for sso_descriptor in root.findall('.//md:IDPSSODescriptor', namespaces):
+            # SSO Service
+            for sso_service in sso_descriptor.findall('.//md:SingleSignOnService', namespaces):
+                binding = sso_service.get('Binding')
+                if 'HTTP-Redirect' in binding or 'HTTP-POST' in binding:
+                    metadata['sso_url'] = sso_service.get('Location')
+                    break
+            
+            # SLO Service
+            for slo_service in sso_descriptor.findall('.//md:SingleLogoutService', namespaces):
+                binding = slo_service.get('Binding')
+                if 'HTTP-Redirect' in binding or 'HTTP-POST' in binding:
+                    metadata['slo_url'] = slo_service.get('Location')
+                    break
+            
+            # Signing certificates
+            for key_descriptor in sso_descriptor.findall('.//md:KeyDescriptor[@use="signing"]', namespaces):
+                cert_element = key_descriptor.find('.//ds:X509Certificate', namespaces)
+                if cert_element is not None and cert_element.text:
+                    metadata['signing_certificates'].append(cert_element.text.strip())
+        
+        return metadata
+        
+    except Exception as e:
+        print(f"Error fetching Azure AD metadata: {e}")
+        return None
+
 def generate_simple_saml_authn_request(issuer, acs_url, destination, name_id_format=None, relay_state=None):
-    """Generate a simple SAML AuthnRequest XML without xmlsec dependency"""
+    """Generate a simple SAML AuthnRequest XML with proper DEFLATE compression"""
     request_id = f"_id{uuid.uuid4().hex}"
     issue_instant = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
     
@@ -112,14 +174,28 @@ def generate_simple_saml_authn_request(issuer, acs_url, destination, name_id_for
         name_id_format=name_id_format or "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
     )
     
-    # Base64 encode for URL (without compression for now)
+    # DEFLATE compress and base64 encode (standard SAML requirement for HTTP-Redirect binding)
     import base64
-    b64_request = base64.b64encode(xml_str.encode('utf-8')).decode('ascii')
+    import zlib
+    
+    # Step 1: Convert XML to bytes
+    xml_bytes = xml_str.encode('utf-8')
+    
+    # Step 2: DEFLATE compress (raw DEFLATE without zlib headers)
+    # Use wbits=-15 for raw DEFLATE format (no headers/trailers)
+    compressor = zlib.compressobj(wbits=-15)
+    compressed = compressor.compress(xml_bytes)
+    compressed += compressor.flush()
+    
+    # Step 3: Base64 encode
+    b64_request = base64.b64encode(compressed).decode('ascii')
     
     return {
         'xml': xml_str,
         'base64': b64_request,
-        'request_id': request_id
+        'request_id': request_id,
+        'compressed_size': len(compressed),
+        'original_size': len(xml_bytes)
     }
 
 @app.route('/')
@@ -161,7 +237,15 @@ def configure():
             }
             
             session['azure_config'] = azure_config
-            flash('SAML configuration saved successfully! You can now test SAML SSO flow.', 'success')
+            
+            # Fetch and cache federation metadata
+            metadata = fetch_azure_federation_metadata(tenant_id)
+            if metadata:
+                session['federation_metadata'] = metadata
+                flash('SAML configuration saved successfully! Federation metadata fetched from Azure AD.', 'success')
+            else:
+                flash('SAML configuration saved, but could not fetch federation metadata. Using fallback configuration.', 'warning')
+            
             return redirect(url_for('saml_builder'))
         else:
             # For full configuration (OAuth/OIDC), all fields are required
@@ -195,6 +279,8 @@ def clear_config():
     """Clear Azure AD configuration from session"""
     if 'azure_config' in session:
         del session['azure_config']
+    if 'federation_metadata' in session:
+        del session['federation_metadata']
     return jsonify({'success': True, 'message': 'Configuration cleared'})
 
 @app.route('/oauth2')
@@ -216,7 +302,14 @@ def saml_builder():
     """SAML SSO Configuration page"""
     config = get_azure_config()
     is_configured = is_saml_configured()  # For SAML, only check if tenant ID is configured
-    return render_template('saml.html', azure_config=config, is_configured=is_configured)
+    
+    # Get federation metadata if available
+    federation_metadata = session.get('federation_metadata')
+    
+    return render_template('saml.html', 
+                         azure_config=config, 
+                         is_configured=is_configured,
+                         federation_metadata=federation_metadata)
 
 @app.route('/saml/metadata')
 def saml_metadata():
@@ -242,6 +335,32 @@ def saml_metadata():
         
     except Exception as e:
         return f'Error generating metadata: {str(e)}', 500
+
+@app.route('/api/azure/federation-metadata')
+def get_federation_metadata():
+    """API endpoint to fetch or return cached Azure AD federation metadata"""
+    try:
+        config = get_azure_config()
+        tenant_id = config['tenant_id']
+        
+        if tenant_id == 'your-tenant-id':
+            return jsonify({'success': False, 'error': 'Tenant ID not configured'}), 400
+        
+        # Check if we have cached metadata
+        cached_metadata = session.get('federation_metadata')
+        if cached_metadata and cached_metadata.get('tenant_id') == tenant_id:
+            return jsonify({'success': True, 'metadata': cached_metadata})
+        
+        # Fetch fresh metadata
+        metadata = fetch_azure_federation_metadata(tenant_id)
+        if metadata:
+            session['federation_metadata'] = metadata
+            return jsonify({'success': True, 'metadata': metadata})
+        else:
+            return jsonify({'success': False, 'error': 'Could not fetch federation metadata'}), 500
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/oauth2/build-url', methods=['POST'])
 def build_oauth2_url():
@@ -343,10 +462,16 @@ def build_saml_url():
         # Get base URL from request
         base_url = request.url_root.rstrip('/')
         
+        # Use federation metadata if available, otherwise fallback
+        federation_metadata = session.get('federation_metadata')
+        if federation_metadata and federation_metadata.get('sso_url'):
+            destination = federation_metadata['sso_url']
+        else:
+            destination = f"https://login.microsoftonline.com/{tenant_id}/saml2"
+        
         # Generate SAML AuthnRequest
         issuer = f"{base_url}/saml/metadata"
         acs_url = f"{base_url}/auth/saml/callback"
-        destination = f"https://login.microsoftonline.com/{tenant_id}/saml2"
         
         authn_request = generate_simple_saml_authn_request(
             issuer=issuer,
@@ -370,6 +495,7 @@ def build_saml_url():
             'success': True,
             'saml_url': saml_url,
             'authn_request_xml': authn_request['xml'],
+            'using_federation_metadata': federation_metadata is not None,
             'parameters': {
                 'tenant_id': tenant_id,
                 'issuer': issuer,
@@ -460,10 +586,18 @@ def saml_login():
         # Get base URL from request
         base_url = request.url_root.rstrip('/')
         
+        # Use federation metadata if available, otherwise fallback
+        federation_metadata = session.get('federation_metadata')
+        if federation_metadata and federation_metadata.get('sso_url'):
+            destination = federation_metadata['sso_url']
+            flash('SAML SSO flow initiated using federation metadata', 'info')
+        else:
+            destination = f"https://login.microsoftonline.com/{tenant_id}/saml2"
+            flash('SAML SSO flow initiated with fallback configuration', 'info')
+        
         # Generate SAML AuthnRequest
         issuer = f"{base_url}/saml/metadata"
         acs_url = f"{base_url}/auth/saml/callback"
-        destination = f"https://login.microsoftonline.com/{tenant_id}/saml2"
         relay_state = 'saml-demo-state'
         
         authn_request = generate_simple_saml_authn_request(
@@ -485,8 +619,6 @@ def saml_login():
         }
         
         saml_url = f"{destination}?" + urlencode(params)
-        
-        flash('SAML SSO flow initiated with proper AuthnRequest', 'info')
         
         return redirect(saml_url)
         
