@@ -34,16 +34,34 @@ jobs:
       run: |
         uv sync
 
-    - name: Verify requirements.txt exists and content
+    - name: Ensure .python-version file exists
       run: |
-        echo "Requirements.txt content:"
+        if [ ! -f .python-version ]; then
+          echo "Creating .python-version file"
+          echo "3.11" > .python-version
+        fi
+        echo "Python version file content:"
+        cat .python-version
+
+    - name: Verify all deployment files exist
+      run: |
+        echo "=== All files in current directory ==="
+        ls -la
+        echo ""
+        echo "=== Check .python-version specifically ==="
+        if [ -f .python-version ]; then
+          echo ".python-version exists:"
+          cat .python-version
+          ls -la .python-version
+        else
+          echo ".python-version does NOT exist"
+        fi
+        echo ""
+        echo "=== Requirements.txt content ==="
         cat requirements.txt
         echo ""
-        echo "Checking for pyjwt..."
+        echo "=== Checking for pyjwt ==="
         grep -i jwt requirements.txt
-        echo ""
-        echo "File size and permissions:"
-        ls -la requirements.txt
 
     - name: Upload artifact for deployment job
       uses: actions/upload-artifact@v4
@@ -81,8 +99,8 @@ jobs:
         echo "Requirements.txt content:"
         cat requirements.txt
         echo ""
-        echo "Python version file:"
-        cat .python-version
+        echo "Python version file (if exists):"
+        cat .python-version 2>/dev/null || echo ".python-version not found (Azure will use default Python 3.11)"
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v3
