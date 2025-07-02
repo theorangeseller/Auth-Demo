@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - {{ method|title }} Authentication{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8">
+    <!-- Header -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900">
+            {% if method == 'oauth2' %}
+                <i class="fas fa-key text-blue-600 mr-3"></i>OAuth 2.0
+            {% elif method == 'oidc' %}
+                <i class="fas fa-id-card text-green-600 mr-3"></i>OpenID Connect
+            {% elif method == 'saml' %}
+                <i class="fas fa-shield-alt text-purple-600 mr-3"></i>SAML SSO
+            {% endif %}
+            Authentication Success
+        </h1>
+        <p class="mt-2 text-gray-600">Authentication completed successfully using {{ method|upper }}</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- User Information -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold text-gray-900 mb-6">User Information</h2>
+            
+            <div class="space-y-4">
+                {% if user.name %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Name</label>
+                    <p class="text-lg text-gray-900">{{ user.name }}</p>
+                </div>
+                {% endif %}
+                
+                {% if user.preferred_username %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Username</label>
+                    <p class="text-lg text-gray-900">{{ user.preferred_username }}</p>
+                </div>
+                {% endif %}
+                
+                {% if user.email %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Email</label>
+                    <p class="text-lg text-gray-900">{{ user.email }}</p>
+                </div>
+                {% endif %}
+                
+                {% if user.sub %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Subject ID</label>
+                    <p class="text-sm text-gray-600 font-mono">{{ user.sub }}</p>
+                </div>
+                {% endif %}
+                
+                {% if user.tid %}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Tenant ID</label>
+                    <p class="text-sm text-gray-600 font-mono">{{ user.tid }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Token Information / SAML Response -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            {% if method == 'saml' %}
+            <h2 class="text-xl font-semibold text-gray-900 mb-6">SAML Response Information</h2>
+            
+            {% if session.saml_response %}
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">SAML Response (Excerpt)</label>
+                <div class="relative">
+                    <textarea readonly rows="3" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 font-mono text-xs">{{ session.saml_response.saml_response }}</textarea>
+                    <button onclick="copyToClipboard('{{ session.saml_response.saml_response }}')" class="absolute top-2 right-2 bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700">
+                        Copy
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">SAML assertion containing user identity (XML format)</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                {% if session.saml_response.relay_state %}
+                <div>
+                    <label class="block text-xs font-medium text-gray-700">Relay State</label>
+                    <p class="text-gray-900 font-mono text-xs">{{ session.saml_response.relay_state }}</p>
+                </div>
+                {% endif %}
+                
+                {% if session.saml_response.timestamp %}
+                <div>
+                    <label class="block text-xs font-medium text-gray-700">Response Time</label>
+                    <p class="text-gray-900 text-xs">{{ session.saml_response.timestamp }}</p>
+                </div>
+                {% endif %}
+                
+                {% if session.saml_response.assertion_consumer_url %}
+                <div class="col-span-2">
+                    <label class="block text-xs font-medium text-gray-700">Assertion Consumer URL</label>
+                    <p class="text-gray-900 font-mono text-xs break-all">{{ session.saml_response.assertion_consumer_url }}</p>
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-file-alt text-4xl mb-4"></i>
+                <p>SAML response data not available</p>
+                <p class="text-xs">This is a demo simulation</p>
+            </div>
+            {% endif %}
+
+            {% else %}
+            <h2 class="text-xl font-semibold text-gray-900 mb-6">Token Information</h2>
+            
+            {% if tokens.access_token %}
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Access Token</label>
+                <div class="relative">
+                    <textarea readonly rows="3" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 font-mono text-xs">{{ tokens.access_token }}</textarea>
+                    <button onclick="copyToClipboard('{{ tokens.access_token }}')" class="absolute top-2 right-2 bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700">
+                        Copy
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Bearer token for API access</p>
+            </div>
+            {% endif %}
+
+            {% if tokens.id_token %}
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">ID Token (JWT)</label>
+                <div class="relative">
+                    <textarea readonly rows="3" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 font-mono text-xs">{{ tokens.id_token }}</textarea>
+                    <button onclick="copyToClipboard('{{ tokens.id_token }}')" class="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700">
+                        Copy
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Identity information in JWT format</p>
+            </div>
+            {% endif %}
+
+            {% if tokens.refresh_token %}
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Refresh Token</label>
+                <div class="relative">
+                    <textarea readonly rows="2" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 font-mono text-xs">{{ tokens.refresh_token }}</textarea>
+                    <button onclick="copyToClipboard('{{ tokens.refresh_token }}')" class="absolute top-2 right-2 bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700">
+                        Copy
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Token for obtaining new access tokens</p>
+            </div>
+            {% endif %}
+
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                {% if tokens.token_type %}
+                <div>
+                    <label class="block text-xs font-medium text-gray-700">Token Type</label>
+                    <p class="text-gray-900">{{ tokens.token_type }}</p>
+                </div>
+                {% endif %}
+                
+                {% if tokens.expires_in %}
+                <div>
+                    <label class="block text-xs font-medium text-gray-700">Expires In</label>
+                    <p class="text-gray-900">{{ tokens.expires_in }} seconds</p>
+                </div>
+                {% endif %}
+                
+                {% if tokens.scope %}
+                <div class="col-span-2">
+                    <label class="block text-xs font-medium text-gray-700">Scope</label>
+                    <p class="text-gray-900">{{ tokens.scope }}</p>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ID Token Decoded -->
+    {% if id_token_decoded %}
+    <div class="mt-8 bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-900 mb-6">Decoded ID Token</h2>
+        <div class="bg-gray-50 rounded-md p-4">
+            <pre class="text-sm font-mono whitespace-pre-wrap">{{ id_token_decoded | tojson(indent=2) }}</pre>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Actions -->
+    <div class="mt-8 flex justify-center space-x-4">
+        <a href="{{ url_for('index') }}" class="bg-gray-600 text-white px-6 py-3 rounded-md hover:bg-gray-700 transition-colors">
+            Back to Home
+        </a>
+        <a href="{{ url_for('logout') }}" class="bg-red-600 text-white px-6 py-3 rounded-md hover:bg-red-700 transition-colors">
+            Logout
+        </a>
+    </div>
+</div>
+
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        console.log('Token copied to clipboard');
+    });
+}
+</script>
+{% endblock %} 

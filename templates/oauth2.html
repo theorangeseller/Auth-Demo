@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+
+{% block title %}OAuth 2.0 Builder - Authentication Demo{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 lg:px-8" x-data="oauth2Builder()">
+    <!-- Header -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900">OAuth 2.0 Authorization URL Builder</h1>
+        <p class="mt-2 text-gray-600">Generate OAuth 2.0 authorization URLs for Microsoft Entra ID</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Configuration Form -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold text-gray-900 mb-6">Configuration</h2>
+            
+            <!-- Base Configuration -->
+            <div class="mb-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Base Configuration</h3>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Base URL Type</label>
+                    <select x-model="config.baseUrlType" @change="updateTenantId()" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500">
+                        <option value="common">Common - Any organization</option>
+                        <option value="organizations">Organizations - Work/school accounts</option>
+                        <option value="consumers">Consumers - Personal accounts</option>
+                        <option value="tenant">Specific Tenant - Single organization</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Choose the authentication endpoint type</p>
+                </div>
+
+                <div class="mb-4" x-show="config.baseUrlType === 'tenant'">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Tenant ID or Name *</label>
+                    <input type="text" x-model="config.tenantId" placeholder="contoso.onmicrosoft.com or GUID" 
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500">
+                    <p class="text-xs text-gray-500 mt-1">Your Entra ID tenant identifier</p>
+                </div>
+            </div>
+
+            <!-- Essential Parameters -->
+            <div class="mb-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Essential Parameters</h3>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Client ID (Application ID) *</label>
+                    <input type="text" x-model="config.clientId" placeholder="12345678-1234-1234-1234-123456789012" 
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500">
+                    <p class="text-xs text-gray-500 mt-1">Unique identifier for your application</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Redirect URI *</label>
+                    <input type="url" x-model="config.redirectUri" placeholder="https://your-app.com/auth/callback" 
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500">
+                    <p class="text-xs text-gray-500 mt-1">Where users are sent after authentication</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Scope (space-separated) *</label>
+                    <div class="mb-2">
+                        <div class="flex flex-wrap gap-2 mb-2">
+                            <button @click="toggleScope('openid')" :class="config.scopes.includes('openid') ? 'bg-azure-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">openid</button>
+                            <button @click="toggleScope('profile')" :class="config.scopes.includes('profile') ? 'bg-azure-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">profile</button>
+                            <button @click="toggleScope('email')" :class="config.scopes.includes('email') ? 'bg-azure-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">email</button>
+                            <button @click="toggleScope('offline_access')" :class="config.scopes.includes('offline_access') ? 'bg-azure-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">offline_access</button>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button @click="toggleScope('https://graph.microsoft.com/.default')" :class="config.scopes.includes('https://graph.microsoft.com/.default') ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">.default</button>
+                            <button @click="toggleScope('https://graph.microsoft.com/User.Read')" :class="config.scopes.includes('https://graph.microsoft.com/User.Read') ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">User.Read</button>
+                            <button @click="toggleScope('https://graph.microsoft.com/Mail.Read')" :class="config.scopes.includes('https://graph.microsoft.com/Mail.Read') ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">Mail.Read</button>
+                        </div>
+                    </div>
+                    <textarea x-model="scopeText" @input="updateScopesFromText()" rows="2" 
+                              class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500" 
+                              placeholder="openid profile email"></textarea>
+                    <p class="text-xs text-gray-500 mt-1">Use quick toggles above or enter custom scopes</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Response Type</label>
+                    <select x-model="config.responseType" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500">
+                        <option value="code">code - Authorization Code Flow (Recommended)</option>
+                        <option value="id_token">id_token - Implicit Flow (ID Token only)</option>
+                        <option value="token">token - Implicit Flow (Access Token only)</option>
+                        <option value="code id_token">code id_token - Hybrid Flow</option>
+                        <option value="code token">code token - Hybrid Flow</option>
+                        <option value="id_token token">id_token token - Implicit Flow (Both)</option>
+                        <option value="code id_token token">code id_token token - Full Hybrid Flow</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Optional Parameters -->
+            <div class="mb-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Optional Parameters</h3>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Response Mode</label>
+                    <select x-model="config.responseMode" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500">
+                        <option value="query">query - Parameters in URL query string</option>
+                        <option value="fragment">fragment - Parameters in URL fragment (after #)</option>
+                        <option value="form_post">form_post - Parameters via HTTP POST</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Prompt</label>
+                    <select x-model="config.prompt" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500">
+                        <option value="">Default behavior (allow SSO)</option>
+                        <option value="login">login - Force user to re-authenticate</option>
+                        <option value="none">none - Silent authentication only</option>
+                        <option value="consent">consent - Force consent dialog</option>
+                        <option value="select_account">select_account - Show account picker</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">State</label>
+                    <input type="text" x-model="config.state" placeholder="random-state-value" 
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500">
+                    <p class="text-xs text-gray-500 mt-1">Random value to prevent CSRF attacks</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Nonce</label>
+                    <input type="text" x-model="config.nonce" placeholder="random-nonce-value" 
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-azure-500">
+                    <p class="text-xs text-gray-500 mt-1">Random value included in ID tokens</p>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex space-x-4">
+                <button @click="generateUrl()" class="flex-1 bg-azure-600 text-white py-2 px-4 rounded-md hover:bg-azure-700 transition-colors">
+                    Generate URL
+                </button>
+                <button @click="clearForm()" class="flex-1 bg-gray-200 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-300 transition-colors">
+                    Clear Form
+                </button>
+            </div>
+        </div>
+
+        <!-- Generated URL Display -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold text-gray-900 mb-6">Generated Authorization URL</h2>
+            
+            <div x-show="generatedUrl" class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Authorization URL</label>
+                <div class="relative">
+                    <textarea x-model="generatedUrl" readonly rows="4" 
+                              class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 font-mono text-sm"></textarea>
+                    <button @click="copyToClipboard(generatedUrl)" 
+                            class="absolute top-2 right-2 bg-azure-600 text-white px-2 py-1 rounded text-xs hover:bg-azure-700">
+                        Copy
+                    </button>
+                </div>
+            </div>
+
+            <div x-show="urlParameters" class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">URL Parameters</label>
+                <div class="bg-gray-50 rounded-md p-3 border">
+                    <pre x-text="urlParameters" class="text-sm font-mono whitespace-pre-wrap"></pre>
+                </div>
+            </div>
+
+            <div x-show="generatedUrl" class="flex space-x-4">
+                <a :href="generatedUrl" target="_blank" 
+                   class="flex-1 bg-green-600 text-white text-center py-2 px-4 rounded-md hover:bg-green-700 transition-colors">
+                    Test Flow
+                </a>
+                <button @click="validateUrl()" 
+                        class="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">
+                    Validate URL
+                </button>
+            </div>
+
+            <!-- Validation Results -->
+            <div x-show="validationResult" class="mt-4 p-3 rounded-md" :class="validationResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'">
+                <p class="text-sm font-medium" :class="validationResult.success ? 'text-green-800' : 'text-red-800'" x-text="validationResult.message"></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function oauth2Builder() {
+    return {
+        config: {
+            baseUrlType: 'common',
+            tenantId: '',
+            clientId: '',
+                            redirectUri: 'http://localhost:3000/auth/callback',
+            scopes: ['openid', 'profile', 'email'],
+            responseType: 'code',
+            responseMode: 'query',
+            prompt: '',
+            state: '',
+            nonce: ''
+        },
+        generatedUrl: '',
+        urlParameters: '',
+        validationResult: null,
+        scopeText: 'openid profile email',
+
+        init() {
+            this.generateRandomValues();
+            this.updateScopesFromText();
+        },
+
+        generateRandomValues() {
+            this.config.state = this.generateRandomString();
+            this.config.nonce = this.generateRandomString();
+        },
+
+        generateRandomString() {
+            return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        },
+
+        updateTenantId() {
+            if (this.config.baseUrlType !== 'tenant') {
+                this.config.tenantId = this.config.baseUrlType;
+            }
+        },
+
+        toggleScope(scope) {
+            const index = this.config.scopes.indexOf(scope);
+            if (index > -1) {
+                this.config.scopes.splice(index, 1);
+            } else {
+                this.config.scopes.push(scope);
+            }
+            this.scopeText = this.config.scopes.join(' ');
+        },
+
+        updateScopesFromText() {
+            this.config.scopes = this.scopeText.split(' ').filter(s => s.trim() !== '');
+        },
+
+        async generateUrl() {
+            try {
+                const response = await fetch('/api/oauth2/build-url', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        tenant_id: this.config.tenantId || this.config.baseUrlType,
+                        client_id: this.config.clientId,
+                        redirect_uri: this.config.redirectUri,
+                        scopes: this.config.scopes.join(' '),
+                        response_type: this.config.responseType,
+                        response_mode: this.config.responseMode,
+                        state: this.config.state,
+                        nonce: this.config.nonce,
+                        prompt: this.config.prompt
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    this.generatedUrl = result.auth_url;
+                    this.urlParameters = JSON.stringify(result.parameters, null, 2);
+                    this.validationResult = null;
+                } else {
+                    this.validationResult = { success: false, message: result.error };
+                }
+            } catch (error) {
+                this.validationResult = { success: false, message: 'Failed to generate URL: ' + error.message };
+            }
+        },
+
+        validateUrl() {
+            if (!this.generatedUrl) {
+                this.validationResult = { success: false, message: 'No URL to validate' };
+                return;
+            }
+
+            // Basic validation
+            const required = ['client_id', 'response_type', 'redirect_uri'];
+            const url = new URL(this.generatedUrl);
+            const missing = required.filter(param => !url.searchParams.has(param));
+
+            if (missing.length > 0) {
+                this.validationResult = { success: false, message: `Missing required parameters: ${missing.join(', ')}` };
+            } else {
+                this.validationResult = { success: true, message: 'URL is valid and contains all required parameters' };
+            }
+        },
+
+        copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                // Could add a toast notification here
+                console.log('URL copied to clipboard');
+            });
+        },
+
+        clearForm() {
+            this.config = {
+                baseUrlType: 'common',
+                tenantId: '',
+                clientId: '',
+                redirectUri: 'http://localhost:3000/auth/callback',
+                scopes: ['openid', 'profile', 'email'],
+                responseType: 'code',
+                responseMode: 'query',
+                prompt: '',
+                state: '',
+                nonce: ''
+            };
+            this.scopeText = 'openid profile email';
+            this.generatedUrl = '';
+            this.urlParameters = '';
+            this.validationResult = null;
+            this.generateRandomValues();
+        }
+    }
+}
+</script>
+{% endblock %} 

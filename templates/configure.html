@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Azure AD Configuration{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <div class="flex items-center mb-6">
+            <svg class="w-8 h-8 text-blue-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+            <h1 class="text-3xl font-bold text-gray-800">Azure AD Configuration</h1>
+        </div>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else 'success' if category == 'success' else 'info' }} p-4 mb-3 rounded-lg border-l-4 
+                            {% if category == 'error' %}bg-red-50 border-red-500 text-red-700{% elif category == 'success' %}bg-green-50 border-green-500 text-green-700{% else %}bg-blue-50 border-blue-500 text-blue-700{% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Instructions -->
+        <div class="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
+            <h2 class="text-lg font-semibold text-blue-800 mb-2">Setup Instructions</h2>
+            <div class="text-blue-700 space-y-2">
+                <p><strong>1. Create an Azure AD App Registration:</strong></p>
+                <ul class="list-disc list-inside ml-4 space-y-1">
+                    <li>Go to <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" class="underline">Azure Portal > App registrations</a></li>
+                    <li>Click "New registration"</li>
+                    <li>Give it a name like "Auth Demo App"</li>
+                    <li>Set redirect URI to: <code class="bg-blue-100 px-1 rounded">{{ config.redirect_uri }}</code></li>
+                </ul>
+                <p><strong>2. Get the required values:</strong></p>
+                <ul class="list-disc list-inside ml-4 space-y-1">
+                    <li><strong>Tenant ID:</strong> Found on the Overview page (Directory/tenant ID)</li>
+                    <li><strong>Client ID:</strong> Found on the Overview page (Application/client ID)</li>
+                    <li><strong>Client Secret:</strong> Create one in "Certificates & secrets" section</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Configuration Form -->
+        <form method="POST" class="space-y-6">
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Tenant ID -->
+                <div>
+                    <label for="tenant_id" class="block text-sm font-medium text-gray-700 mb-2">
+                        Tenant ID *
+                        <span class="text-gray-500 font-normal">(Directory ID)</span>
+                    </label>
+                    <input type="text" 
+                           id="tenant_id" 
+                           name="tenant_id" 
+                           value="{{ config.tenant_id if config.tenant_id != 'your-tenant-id' else '' }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           placeholder="00000000-0000-0000-0000-000000000000"
+                           required>
+                    <p class="mt-1 text-sm text-gray-500">Your Azure AD tenant (directory) ID</p>
+                </div>
+
+                <!-- Client ID -->
+                <div>
+                    <label for="client_id" class="block text-sm font-medium text-gray-700 mb-2">
+                        Client ID *
+                        <span class="text-gray-500 font-normal">(Application ID)</span>
+                    </label>
+                    <input type="text" 
+                           id="client_id" 
+                           name="client_id" 
+                           value="{{ config.client_id if config.client_id != 'your-client-id' else '' }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           placeholder="00000000-0000-0000-0000-000000000000"
+                           required>
+                    <p class="mt-1 text-sm text-gray-500">Your app registration's application ID</p>
+                </div>
+
+                <!-- Client Secret -->
+                <div class="md:col-span-2">
+                    <label for="client_secret" class="block text-sm font-medium text-gray-700 mb-2">
+                        Client Secret *
+                        <span class="text-gray-500 font-normal">(Application Secret)</span>
+                    </label>
+                    <input type="password" 
+                           id="client_secret" 
+                           name="client_secret" 
+                           value="{{ config.client_secret if config.client_secret != 'your-client-secret' else '' }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           placeholder="Enter your client secret"
+                           required>
+                    <p class="mt-1 text-sm text-gray-500">Create a client secret in the "Certificates & secrets" section</p>
+                </div>
+
+                <!-- Redirect URI -->
+                <div class="md:col-span-2">
+                    <label for="redirect_uri" class="block text-sm font-medium text-gray-700 mb-2">
+                        Redirect URI
+                        <span class="text-gray-500 font-normal">(Callback URL)</span>
+                    </label>
+                    <input type="url" 
+                           id="redirect_uri" 
+                           name="redirect_uri" 
+                           value="{{ config.redirect_uri }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           placeholder="http://localhost:3000/auth/callback">
+                    <p class="mt-1 text-sm text-gray-500">Must match the redirect URI configured in your Azure AD app registration</p>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200">
+                <button type="submit" 
+                        class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors">
+                    Save Configuration
+                </button>
+                
+                <a href="{{ url_for('index') }}" 
+                   class="bg-gray-600 text-white px-6 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors text-center">
+                    Back to Home
+                </a>
+
+                {% if config.tenant_id != 'your-tenant-id' %}
+                <button type="button" 
+                        onclick="clearConfig()"
+                        class="bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors">
+                    Clear Configuration
+                </button>
+                {% endif %}
+            </div>
+        </form>
+
+        <!-- Current Configuration Status -->
+        {% if config.tenant_id != 'your-tenant-id' %}
+        <div class="mt-8 p-4 bg-green-50 border-l-4 border-green-500 rounded-lg">
+            <h3 class="text-lg font-semibold text-green-800 mb-2">Current Configuration</h3>
+            <div class="text-green-700 space-y-1">
+                <p><strong>Tenant ID:</strong> {{ config.tenant_id }}</p>
+                <p><strong>Client ID:</strong> {{ config.client_id }}</p>
+                <p><strong>Client Secret:</strong> ••••••••••••••••</p>
+                <p><strong>Redirect URI:</strong> {{ config.redirect_uri }}</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function clearConfig() {
+    if (confirm('Are you sure you want to clear the Azure AD configuration?')) {
+        fetch('/api/config/clear', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = '/configure';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+    }
+}
+</script>
+{% endblock %} 
