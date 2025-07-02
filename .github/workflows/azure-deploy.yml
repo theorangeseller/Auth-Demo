@@ -50,12 +50,14 @@ jobs:
       with:
         name: python-app
         path: |
-          .
-          !.venv/
-          !.git/
-          !.github/
-          !*.pyc
-          !__pycache__/
+          main.py
+          run.py
+          pyproject.toml
+          requirements.txt
+          .python-version
+          templates/
+          README.md
+          uv.lock
 
   deploy:
     runs-on: ubuntu-latest
