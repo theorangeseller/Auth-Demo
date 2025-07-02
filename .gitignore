@@ -87,3 +87,4 @@ app.log
 # (requirements.txt and .python-version are now tracked for deployment)
 
 DEPLOYMENT.md
+SAML-summary.md

@@ -200,10 +200,17 @@ def verify_saml_signature(saml_response_xml, signing_certificates):
         # In production, use proper XML canonicalization and full verification
         
         # Try each certificate from federation metadata
+        print(f"🔍 DEBUG: verify_saml_signature called with {len(signing_certificates)} certificates")
         for i, cert_text in enumerate(signing_certificates):
             try:
+                print(f"🔍 DEBUG: Processing certificate {i+1}")
                 # Clean up certificate text
                 cert_text = cert_text.replace('\n', '').replace('\r', '').strip()
+                
+                # Debug: show first/last few chars of cert
+                cert_preview = f"{cert_text[:20]}...{cert_text[-20:]}" if len(cert_text) > 40 else cert_text
+                print(f"🔍 DEBUG: Certificate {i+1} preview: {cert_preview}")
+                
                 cert_der = base64.b64decode(cert_text)
                 certificate = x509.load_der_x509_certificate(cert_der, default_backend())
                 
@@ -219,13 +226,17 @@ def verify_saml_signature(saml_response_xml, signing_certificates):
                     'not_after': certificate.not_valid_after.isoformat()
                 }
                 
+                print(f"🔍 DEBUG: Certificate {i+1} subject: {certificate.subject.rfc4514_string()}")
+                
                 # Check certificate validity
                 now = datetime.utcnow()
                 if now < certificate.not_valid_before or now > certificate.not_valid_after:
                     verification_result['details'].append(f'⚠️ Certificate {i+1} is not within valid date range')
+                    print(f"🔍 DEBUG: Certificate {i+1} is expired or not yet valid")
                     continue
                 
                 verification_result['details'].append(f'✓ Certificate {i+1} is within valid date range')
+                print(f"🔍 DEBUG: Certificate {i+1} is valid, marking verification as successful")
                 
                 # For educational demo, we'll mark as verified if we found a valid certificate
                 # Real verification would require proper XML canonicalization and signature checking
@@ -236,6 +247,7 @@ def verify_saml_signature(saml_response_xml, signing_certificates):
                 break
                 
             except Exception as cert_error:
+                print(f"🔍 DEBUG: Certificate {i+1} error: {str(cert_error)}")
                 verification_result['details'].append(f'❌ Certificate {i+1} verification failed: {str(cert_error)}')
                 continue
         
@@ -909,26 +921,49 @@ def saml_callback():
         federation_metadata = session.get('federation_metadata')
         uploaded_certificates = session.get('uploaded_certificates', [])
         
+        # Debug logging
+        print(f"🔍 DEBUG: Federation metadata exists: {federation_metadata is not None}")
+        if federation_metadata:
+            print(f"🔍 DEBUG: Signing certificates count: {len(federation_metadata.get('signing_certificates', []))}")
+        print(f"🔍 DEBUG: Uploaded certificates count: {len(uploaded_certificates)}")
+        
         certificates_to_use = None
         cert_source = None
         
         if federation_metadata and federation_metadata.get('signing_certificates'):
+            # Federation metadata certificates are base64 strings - use directly
             certificates_to_use = federation_metadata['signing_certificates']
             cert_source = 'federation_metadata'
+            print(f"🔍 DEBUG: Using federation metadata certificates: {len(certificates_to_use)} certs")
         elif uploaded_certificates:
-            # Convert uploaded certificates to the format expected by verify_saml_signature
+            # Convert uploaded certificates - extract just the base64 part
             certificates_to_use = []
             for cert_info in uploaded_certificates:
-                certificates_to_use.append({
-                    'pem': cert_info['pem'],
-                    'subject': cert_info['subject'],
-                    'not_after': cert_info['not_after'],
-                    'index': len(certificates_to_use)
-                })
+                # Extract the base64 certificate from PEM format
+                pem_content = cert_info['pem']
+                if '-----BEGIN CERTIFICATE-----' in pem_content:
+                    # Extract just the base64 part (remove PEM headers/footers)
+                    lines = pem_content.split('\n')
+                    cert_base64 = ''
+                    capture = False
+                    for line in lines:
+                        if '-----BEGIN CERTIFICATE-----' in line:
+                            capture = True
+                            continue
+                        elif '-----END CERTIFICATE-----' in line:
+                            break
+                        elif capture:
+                            cert_base64 += line.strip()
+                    certificates_to_use.append(cert_base64)
+                else:
+                    # Assume it's already base64
+                    certificates_to_use.append(pem_content.replace('\n', '').replace('\r', '').strip())
             cert_source = 'uploaded_certificates'
+            print(f"🔍 DEBUG: Using uploaded certificates: {len(certificates_to_use)} certs converted to base64")
         
         if certificates_to_use:
             try:
+                print(f"🔍 DEBUG: Starting signature verification with {len(certificates_to_use)} certificates")
                 signature_verification = verify_saml_signature(
                     full_response, 
                     certificates_to_use
@@ -936,13 +971,18 @@ def saml_callback():
                 # Add source information
                 if signature_verification:
                     signature_verification['certificate_source'] = cert_source
+                    print(f"🔍 DEBUG: Signature verification result: {signature_verification.get('verified', False)}")
             except Exception as sig_error:
+                print(f"🔍 DEBUG: Signature verification exception: {str(sig_error)}")
                 signature_verification = {
                     'verified': False,
                     'error': f'Signature verification failed: {str(sig_error)}',
                     'details': [f'❌ Verification error: {str(sig_error)}'],
                     'certificate_source': cert_source
                 }
+        else:
+            print("🔍 DEBUG: No certificates available for signature verification")
+            signature_verification = None
         
         session['saml_response'] = {
             'saml_response': full_response,  # Store full response for educational purposes
