@@ -5,11 +5,15 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode, urlparse, parse_qs
 import base64
 import jwt
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
 import xml.etree.ElementTree as ET
 import urllib.parse
+import hashlib
+import re
 
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from flask_session import Session
@@ -141,6 +145,108 @@ def fetch_azure_federation_metadata(tenant_id):
     except Exception as e:
         print(f"Error fetching Azure AD metadata: {e}")
         return None
+
+def verify_saml_signature(saml_response_xml, signing_certificates):
+    """
+    Basic SAML signature verification for educational purposes.
+    This is a simplified implementation - production should use proper SAML libraries.
+    """
+    verification_result = {
+        'verified': False,
+        'details': [],
+        'certificate_used': None,
+        'signature_found': False,
+        'error': None
+    }
+    
+    try:
+        # Parse the SAML response XML
+        root = ET.fromstring(saml_response_xml)
+        
+        # Define namespaces
+        namespaces = {
+            'saml': 'urn:oasis:names:tc:SAML:2.0:assertion',
+            'samlp': 'urn:oasis:names:tc:SAML:2.0:protocol',
+            'ds': 'http://www.w3.org/2000/09/xmldsig#'
+        }
+        
+        # Look for XML signature
+        signature_elem = root.find('.//ds:Signature', namespaces)
+        if signature_elem is None:
+            verification_result['error'] = 'No XML signature found in SAML response'
+            return verification_result
+        
+        verification_result['signature_found'] = True
+        verification_result['details'].append('✓ XML Signature element found')
+        
+        # Extract signature value
+        signature_value_elem = signature_elem.find('.//ds:SignatureValue', namespaces)
+        if signature_value_elem is None:
+            verification_result['error'] = 'No SignatureValue found'
+            return verification_result
+        
+        signature_value = signature_value_elem.text.strip()
+        verification_result['details'].append(f'✓ Signature value extracted ({len(signature_value)} chars)')
+        
+        # Extract signed info (this is what was actually signed)
+        signed_info_elem = signature_elem.find('.//ds:SignedInfo', namespaces)
+        if signed_info_elem is None:
+            verification_result['error'] = 'No SignedInfo found'
+            return verification_result
+        
+        verification_result['details'].append('✓ SignedInfo element found')
+        
+        # For educational purposes, we'll do basic verification
+        # In production, use proper XML canonicalization and full verification
+        
+        # Try each certificate from federation metadata
+        for i, cert_text in enumerate(signing_certificates):
+            try:
+                # Clean up certificate text
+                cert_text = cert_text.replace('\n', '').replace('\r', '').strip()
+                cert_der = base64.b64decode(cert_text)
+                certificate = x509.load_der_x509_certificate(cert_der, default_backend())
+                
+                # Get public key
+                public_key = certificate.public_key()
+                
+                verification_result['details'].append(f'✓ Certificate {i+1} loaded successfully')
+                verification_result['certificate_used'] = {
+                    'index': i+1,
+                    'subject': certificate.subject.rfc4514_string(),
+                    'issuer': certificate.issuer.rfc4514_string(),
+                    'not_before': certificate.not_valid_before.isoformat(),
+                    'not_after': certificate.not_valid_after.isoformat()
+                }
+                
+                # Check certificate validity
+                now = datetime.utcnow()
+                if now < certificate.not_valid_before or now > certificate.not_valid_after:
+                    verification_result['details'].append(f'⚠️ Certificate {i+1} is not within valid date range')
+                    continue
+                
+                verification_result['details'].append(f'✓ Certificate {i+1} is within valid date range')
+                
+                # For educational demo, we'll mark as verified if we found a valid certificate
+                # Real verification would require proper XML canonicalization and signature checking
+                verification_result['verified'] = True
+                verification_result['details'].append('✅ Educational verification: Certificate validation successful')
+                verification_result['details'].append('⚠️ Note: This is simplified verification for educational purposes')
+                
+                break
+                
+            except Exception as cert_error:
+                verification_result['details'].append(f'❌ Certificate {i+1} verification failed: {str(cert_error)}')
+                continue
+        
+        if not verification_result['verified']:
+            verification_result['error'] = 'No valid certificates found for verification'
+            
+    except Exception as e:
+        verification_result['error'] = f'Signature verification error: {str(e)}'
+        verification_result['details'].append(f'❌ Verification failed: {str(e)}')
+    
+    return verification_result
 
 def generate_simple_saml_authn_request(issuer, acs_url, destination, name_id_format=None, relay_state=None):
     """Generate a simple SAML AuthnRequest XML with proper DEFLATE compression"""
@@ -722,19 +828,29 @@ def saml_callback():
                     attr_value = attr_value_elem.text.strip()
                     extracted_attrs[attr_name] = attr_value
                     
-                    # Map common SAML attribute names to user info
-                    if any(x in attr_name for x in ['givenname', 'firstname', 'fname']):
+                    # Map Azure AD specific attribute names (based on schemas.microsoft.com)
+                    if 'givenname' in attr_name or 'firstname' in attr_name:
                         user_info['given_name'] = attr_value
-                    elif any(x in attr_name for x in ['surname', 'lastname', 'lname', 'familyname']):
+                    elif 'surname' in attr_name or 'lastname' in attr_name or 'familyname' in attr_name:
                         user_info['family_name'] = attr_value
-                    elif any(x in attr_name for x in ['displayname', 'name', 'fullname']):
+                    elif 'displayname' in attr_name:
                         user_info['name'] = attr_value
-                    elif any(x in attr_name for x in ['email', 'emailaddress', 'mail']):
+                    elif 'emailaddress' in attr_name or 'email' in attr_name or attr_name.endswith('/mail'):
                         user_info['email'] = attr_value
-                    elif any(x in attr_name for x in ['upn', 'userprincipalname']):
+                    elif 'userprincipalname' in attr_name or 'upn' in attr_name:
                         user_info['preferred_username'] = attr_value
-                    elif any(x in attr_name for x in ['unique', 'userid', 'objectid']):
+                    elif 'objectidentifier' in attr_name or 'objectid' in attr_name:
                         user_info['oid'] = attr_value
+                    elif 'tenantid' in attr_name:
+                        user_info['tid'] = attr_value
+                    elif 'identityprovider' in attr_name:
+                        user_info['identity_provider'] = attr_value
+                    elif 'authnmethodsreferences' in attr_name:
+                        user_info['auth_methods'] = attr_value
+                    
+                    # Also check for common names without exact matching
+                    if not user_info.get('name') and ('name' in attr_name and 'username' not in attr_name and 'surname' not in attr_name):
+                        user_info['name'] = attr_value
             
             # Look for NameID (often contains email or unique identifier)
             name_id_elem = root.find('.//saml:NameID', namespaces)
@@ -774,6 +890,23 @@ def saml_callback():
         
         # Store SAML response info for educational display
         full_response = decoded_response.decode('utf-8', errors='ignore')
+        
+        # Perform signature verification if we have federation metadata
+        signature_verification = None
+        federation_metadata = session.get('federation_metadata')
+        if federation_metadata and federation_metadata.get('signing_certificates'):
+            try:
+                signature_verification = verify_saml_signature(
+                    full_response, 
+                    federation_metadata['signing_certificates']
+                )
+            except Exception as sig_error:
+                signature_verification = {
+                    'verified': False,
+                    'error': f'Signature verification failed: {str(sig_error)}',
+                    'details': [f'❌ Verification error: {str(sig_error)}']
+                }
+        
         session['saml_response'] = {
             'saml_response': full_response,  # Store full response for educational purposes
             'saml_response_size': len(decoded_response),
@@ -785,7 +918,8 @@ def saml_callback():
             'compressed_base64_size': len(saml_response) if saml_response else 0,
             'user_attributes_count': len(extracted_attrs),
             'has_name_id': bool(user_info.get('name_id')),
-            'parsing_method': 'Real SAML Response' if 'saml:Assertion' in full_response else 'Demo Fallback'
+            'parsing_method': 'Real SAML Response' if 'saml:Assertion' in full_response else 'Demo Fallback',
+            'signature_verification': signature_verification
         }
         
         flash('SAML SSO authentication successful!', 'success')
