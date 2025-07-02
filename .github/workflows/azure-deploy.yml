@@ -15,7 +15,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Set up Python version
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
@@ -36,16 +36,10 @@ jobs:
 
     - name: Create requirements.txt for Azure
       run: |
-        uv pip freeze > requirements.txt
-
-    - name: Create startup script for Azure
-      run: |
-        echo "#!/bin/bash" > startup.sh
-        echo "python -m gunicorn main:app --bind=0.0.0.0 --timeout 600" >> startup.sh
-        chmod +x startup.sh
+        uv export --format requirements-txt --no-hashes > requirements.txt
 
     - name: Upload artifact for deployment job
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: python-app
         path: |
@@ -66,15 +60,15 @@ jobs:
 
     steps:
     - name: Download artifact from build job
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: python-app
 
     - name: Deploy to Azure Web App
-      uses: azure/webapps-deploy@v2
+      uses: azure/webapps-deploy@v3
       id: deploy-to-webapp
       with:
         app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
         slot-name: 'Production'
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        startup-command: 'startup.sh' 
+        startup-command: 'gunicorn main:app --bind=0.0.0.0 --timeout 600' 

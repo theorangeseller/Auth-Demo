@@ -84,7 +84,6 @@ app.log
 *.log
 
 # Azure deployment
-startup.sh
 requirements.txt
 
 # Python version file
