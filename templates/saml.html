@@ -11,65 +11,7 @@
             SAML (Security Assertion Markup Language) is an XML-based standard for exchanging authentication and authorization data between an identity provider (Azure AD) and a service provider (your application). Configure Azure AD Enterprise Application for SAML SSO integration.
         </p>
 
-        <!-- Federation Metadata Explanation -->
-        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
-            <div class="flex">
-                <div class="flex-shrink-0">
-                    <i class="fas fa-info-circle text-blue-400"></i>
-                </div>
-                <div class="ml-3">
-                    <h3 class="text-lg font-medium text-blue-800">Federation Metadata vs Manual Configuration</h3>
-                    <div class="mt-2 text-blue-700 text-sm">
-                        <p class="mb-2"><strong>Why Tenant ID is still needed:</strong> Azure AD is multi-tenant, so the tenant ID tells us which organization's metadata to fetch from:</p>
-                        <code class="bg-blue-100 px-2 py-1 rounded text-xs">https://login.microsoftonline.com/{tenant_id}/federationmetadata/2007-06/federationmetadata.xml</code>
-                        
-                        <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <h4 class="font-semibold text-blue-800">✅ With Federation Metadata:</h4>
-                                <ul class="list-disc list-inside text-xs space-y-1 mt-1">
-                                    <li>Automatic endpoint discovery</li>
-                                    <li>Real signing certificates</li>
-                                    <li>Certificate rotation support</li>
-                                    <li>Standards-compliant configuration</li>
-                                    <li>Single source of truth</li>
-                                </ul>
-                            </div>
-                            <div>
-                                <h4 class="font-semibold text-blue-800">❌ Manual Configuration:</h4>
-                                <ul class="list-disc list-inside text-xs space-y-1 mt-1">
-                                    <li>Hardcoded endpoints</li>
-                                    <li>Manual certificate management</li>
-                                    <li>Breaks on certificate rotation</li>
-                                    <li>Error-prone setup</li>
-                                    <li>Multiple configuration points</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Azure Web App Notice -->
-        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
-            <div class="flex">
-                <div class="flex-shrink-0">
-                    <i class="fas fa-cloud text-blue-400"></i>
-                </div>
-                <div class="ml-3">
-                    <h3 class="text-lg font-medium text-blue-800">Azure Web App Deployment</h3>
-                    <div class="mt-2 text-blue-700">
-                        <p>This application is deployed on Azure Web Services with HTTPS support, making it ready for Azure AD SAML integration.</p>
-                        <div class="mt-3 space-y-1">
-                            <div><strong>✅ Production HTTPS URLs</strong> - Automatically provided by Azure Web Apps</div>
-                            <div><strong>✅ Public Accessibility</strong> - Azure AD can reach your callback URLs</div>
-                            <div><strong>✅ SSL Certificates</strong> - Managed by Azure platform</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
+        <!-- Tenant ID Configuration -->
         {% if not is_saml_configured %}
         <div class="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6">
             <div class="flex">
@@ -77,15 +19,28 @@
                     <i class="fas fa-info-circle text-amber-400"></i>
                 </div>
                 <div class="ml-3 flex-1">
-                    <h3 class="text-lg font-medium text-amber-800">Tenant ID Required for SAML Testing</h3>
+                    <h3 class="text-lg font-medium text-amber-800">Configure Tenant ID for SAML Testing</h3>
                     <div class="mt-2 text-amber-700">
-                        <p>For SAML SSO testing, you only need to configure your <strong>Tenant ID</strong> (no client secret required).</p>
-                        <p class="mt-2">SAML SSO uses Enterprise Applications in Azure AD, not App Registrations.</p>
+                        <p>Enter your Azure AD Tenant ID to enable SAML SSO testing. No client secret required for SAML.</p>
                     </div>
                     <div class="mt-4">
-                        <a href="{{ url_for('configure') }}" class="bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-700 transition-colors">
-                            <i class="fas fa-cog mr-2"></i>Configure Tenant ID
-                        </a>
+                        <form @submit.prevent="configureTenantId()" class="flex items-center space-x-3">
+                            <input 
+                                type="text" 
+                                x-model="tenantId"
+                                placeholder="Enter your Azure AD Tenant ID (e.g., 12345678-1234-1234-1234-123456789012)"
+                                class="flex-1 px-3 py-2 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm"
+                                required
+                            >
+                            <button 
+                                type="submit"
+                                class="bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-700 transition-colors text-sm"
+                                :disabled="!tenantId || configuringTenant"
+                            >
+                                <i class="fas fa-save mr-2"></i>
+                                <span x-text="configuringTenant ? 'Configuring...' : 'Configure'"></span>
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -210,17 +165,7 @@
                     </ul>
                 </div>
 
-                <!-- Azure Deployment Benefits -->
-                <div class="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-md">
-                    <h3 class="text-sm font-medium text-indigo-800 mb-2">Azure Web App Benefits</h3>
-                    <div class="text-xs text-indigo-700 space-y-2">
-                        <div><strong>✅ Automatic HTTPS:</strong> SSL certificates managed by Azure</div>
-                        <div><strong>✅ Custom Domain:</strong> Use your own domain name if needed</div>
-                        <div><strong>✅ High Availability:</strong> Built-in load balancing and scaling</div>
-                        <div><strong>✅ Azure AD Integration:</strong> Native support for Microsoft identity</div>
-                        <div><strong>✅ CI/CD Pipeline:</strong> Deploy directly from GitHub</div>
-                    </div>
-                </div>
+
 
                 <!-- Azure AD URLs -->
                 {% if azure_config.tenant_id != 'your-tenant-id' %}
@@ -340,6 +285,9 @@
 <script>
 function samlBuilder() {
     return {
+        tenantId: '',
+        configuringTenant: false,
+
         get entityId() {
             // Ensure HTTPS for Azure Web Apps
             const origin = window.location.origin.replace('http://', 'https://');
@@ -356,6 +304,42 @@ function samlBuilder() {
             // Ensure HTTPS for Azure Web Apps
             const origin = window.location.origin.replace('http://', 'https://');
             return `${origin}/saml/login`;
+        },
+
+        async configureTenantId() {
+            if (!this.tenantId.trim()) {
+                alert('Please enter a valid Tenant ID');
+                return;
+            }
+
+            this.configuringTenant = true;
+
+            try {
+                const response = await fetch('/configure', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        config_type: 'saml_only',
+                        tenant_id: this.tenantId.trim(),
+                        client_id: 'saml-demo-app',
+                        client_secret: 'not-needed-for-saml'
+                    })
+                });
+
+                if (response.ok) {
+                    // Reload the page to reflect the new configuration
+                    window.location.reload();
+                } else {
+                    alert('Failed to configure tenant ID. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error configuring tenant ID:', error);
+                alert('Error configuring tenant ID. Please try again.');
+            } finally {
+                this.configuringTenant = false;
+            }
         },
 
         copyToClipboard(text) {
