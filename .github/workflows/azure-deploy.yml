@@ -36,7 +36,24 @@ jobs:
 
     - name: Create requirements.txt for Azure
       run: |
-        uv export --format requirements-txt --no-hashes > requirements.txt
+        # Create requirements.txt manually to ensure compatibility
+        echo "flask>=3.0.0" > requirements.txt
+        echo "flask-session>=0.5.0" >> requirements.txt
+        echo "msal>=1.24.0" >> requirements.txt
+        echo "requests>=2.31.0" >> requirements.txt
+        echo "python-jose[cryptography]>=3.3.0" >> requirements.txt
+        echo "cryptography>=41.0.0" >> requirements.txt
+        echo "python-dotenv>=1.0.0" >> requirements.txt
+        echo "pyjwt>=2.8.0" >> requirements.txt
+        echo "gunicorn>=21.2.0" >> requirements.txt
+        
+    - name: Verify requirements.txt content
+      run: |
+        echo "Generated requirements.txt content:"
+        cat requirements.txt
+        echo ""
+        echo "Checking for pyjwt..."
+        grep -i jwt requirements.txt || echo "JWT dependency not found!"
 
     - name: Upload artifact for deployment job
       uses: actions/upload-artifact@v4
