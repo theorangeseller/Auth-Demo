@@ -34,7 +34,7 @@ jobs:
       run: |
         uv sync
 
-    - name: Ensure .python-version file exists
+    - name: Ensure .python-version file exists and setup startup scripts
       run: |
         if [ ! -f .python-version ]; then
           echo "Creating .python-version file"
@@ -42,6 +42,10 @@ jobs:
         fi
         echo "Python version file content:"
         cat .python-version
+        echo ""
+        echo "Making startup scripts executable:"
+        chmod +x startup.sh startup.py
+        echo "Startup scripts prepared successfully"
 
     - name: Verify all deployment files exist
       run: |
@@ -70,9 +74,13 @@ jobs:
         path: |
           main.py
           run.py
+          startup.py
           pyproject.toml
           requirements.txt
+          runtime.txt
           .python-version
+          startup.sh
+          AZURE_STARTUP_CONFIG.md
           templates/
           README.md
           uv.lock
@@ -96,11 +104,18 @@ jobs:
         echo "Files being deployed:"
         ls -la
         echo ""
-        echo "Requirements.txt content:"
+        echo "=== Requirements.txt content ==="
         cat requirements.txt
         echo ""
-        echo "Python version file (if exists):"
-        cat .python-version 2>/dev/null || echo ".python-version not found (Azure will use default Python 3.11)"
+        echo "=== Python version files ==="
+        echo "runtime.txt:"
+        cat runtime.txt 2>/dev/null || echo "runtime.txt not found"
+        echo ".python-version:"
+        cat .python-version 2>/dev/null || echo ".python-version not found"
+        echo ""
+        echo "=== Startup files ==="
+        echo "startup.py exists: $(test -f startup.py && echo 'YES' || echo 'NO')"
+        echo "startup.sh exists: $(test -f startup.sh && echo 'YES' || echo 'NO')"
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v3
