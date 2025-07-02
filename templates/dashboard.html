@@ -62,50 +62,205 @@
             </div>
         </div>
 
-        <!-- Token Information / SAML Response -->
+        <!-- SAML Response and Educational Information -->
         <div class="bg-white rounded-lg shadow-md p-6">
             {% if method == 'saml' %}
-            <h2 class="text-xl font-semibold text-gray-900 mb-6">SAML Response Information</h2>
+            <h2 class="text-xl font-semibold text-gray-900 mb-6">
+                <i class="fas fa-file-code text-purple-600 mr-2"></i>SAML Authentication Details
+            </h2>
             
-            {% if session.saml_response %}
-            <div class="mb-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">SAML Response (Excerpt)</label>
-                <div class="relative">
-                    <textarea readonly rows="3" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 font-mono text-xs">{{ session.saml_response.saml_response }}</textarea>
-                    <button onclick="copyToClipboard('{{ session.saml_response.saml_response }}')" class="absolute top-2 right-2 bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700">
-                        Copy
-                    </button>
+            <!-- SAML vs JWT Education -->
+            <div class="mb-6 bg-blue-50 border-l-4 border-blue-400 p-4">
+                <h3 class="text-sm font-semibold text-blue-800 mb-2">
+                    <i class="fas fa-graduation-cap mr-1"></i>SAML vs JWT/OAuth Tokens
+                </h3>
+                <div class="text-xs text-blue-700 grid grid-cols-2 gap-4">
+                    <div>
+                        <strong>SAML (XML-based):</strong>
+                        <ul class="list-disc list-inside mt-1 space-y-1">
+                            <li>XML assertions</li>
+                            <li>Certificate-based security</li>
+                            <li>Enterprise SSO standard</li>
+                            <li>Identity-focused</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <strong>JWT/OAuth (JSON-based):</strong>
+                        <ul class="list-disc list-inside mt-1 space-y-1">
+                            <li>JSON Web Tokens</li>
+                            <li>Secret/key-based security</li>
+                            <li>API access standard</li>
+                            <li>Authorization-focused</li>
+                        </ul>
+                    </div>
                 </div>
-                <p class="text-xs text-gray-500 mt-1">SAML assertion containing user identity (XML format)</p>
             </div>
 
-            <div class="grid grid-cols-2 gap-4 text-sm">
-                {% if session.saml_response.relay_state %}
-                <div>
-                    <label class="block text-xs font-medium text-gray-700">Relay State</label>
-                    <p class="text-gray-900 font-mono text-xs">{{ session.saml_response.relay_state }}</p>
+            <!-- SAML Attributes -->
+            {% if user.saml_attributes %}
+            <div class="mb-6">
+                <h3 class="text-sm font-semibold text-gray-800 mb-3">
+                    <i class="fas fa-tags text-purple-600 mr-1"></i>SAML Attributes Received
+                </h3>
+                <div class="bg-gray-50 rounded-md p-3 max-h-32 overflow-y-auto">
+                    <div class="grid grid-cols-1 gap-2 text-xs">
+                        {% for attr_name, attr_value in user.saml_attributes.items() %}
+                        <div class="flex justify-between">
+                            <span class="font-mono text-purple-600">{{ attr_name }}:</span>
+                            <span class="text-gray-800 ml-2 truncate">{{ attr_value }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
                 </div>
-                {% endif %}
-                
-                {% if session.saml_response.timestamp %}
-                <div>
-                    <label class="block text-xs font-medium text-gray-700">Response Time</label>
-                    <p class="text-gray-900 text-xs">{{ session.saml_response.timestamp }}</p>
+                <p class="text-xs text-gray-500 mt-1">
+                    <i class="fas fa-info-circle mr-1"></i>These attributes are sent by Azure AD in the SAML assertion
+                </p>
+            </div>
+            {% endif %}
+
+            <!-- SAML Flow Timeline -->
+            <div class="mb-6">
+                <h3 class="text-sm font-semibold text-gray-800 mb-3">
+                    <i class="fas fa-route text-purple-600 mr-1"></i>SAML SSO Flow Completed
+                </h3>
+                <div class="space-y-2 text-xs">
+                    <div class="flex items-center">
+                        <span class="bg-green-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs mr-2">1</span>
+                        <span>User clicked "Test SAML SSO" → AuthnRequest generated</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="bg-green-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs mr-2">2</span>
+                        <span>Redirected to Azure AD with DEFLATE-compressed SAML request</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="bg-green-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs mr-2">3</span>
+                        <span>User authenticated with Azure AD (or was already signed in)</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="bg-green-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs mr-2">4</span>
+                        <span>Azure AD posted SAML Response to callback URL</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="bg-green-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs mr-2">5</span>
+                        <span>App parsed SAML assertion and extracted user data</span>
+                    </div>
                 </div>
-                {% endif %}
-                
-                {% if session.saml_response.assertion_consumer_url %}
-                <div class="col-span-2">
-                    <label class="block text-xs font-medium text-gray-700">Assertion Consumer URL</label>
-                    <p class="text-gray-900 font-mono text-xs break-all">{{ session.saml_response.assertion_consumer_url }}</p>
+            </div>
+
+            {% if session.saml_response %}
+            <!-- SAML Response Details -->
+            <div class="space-y-4">
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-sm font-medium text-gray-700">Full SAML Response (Base64 Decoded)</label>
+                        <button onclick="toggleElement('saml-response')" class="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700">
+                            <i class="fas fa-eye mr-1"></i>Show/Hide
+                        </button>
+                    </div>
+                    <div id="saml-response" class="hidden">
+                        <div class="relative">
+                            <textarea readonly rows="8" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 font-mono text-xs">{{ session.saml_response.saml_response }}</textarea>
+                            <button onclick="copyToClipboard(document.querySelector('#saml-response textarea').value)" class="absolute top-2 right-2 bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700">
+                                <i class="fas fa-copy mr-1"></i>Copy
+                            </button>
+                        </div>
+                        <div class="mt-2 text-xs text-gray-600 bg-yellow-50 border-l-4 border-yellow-400 p-2">
+                            <strong>Educational Note:</strong> This XML contains a signed SAML assertion from Azure AD. 
+                            In production, you would validate the digital signature using Azure AD's public certificate 
+                            to ensure the response hasn't been tampered with.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    {% if session.saml_response.relay_state %}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Relay State</label>
+                        <p class="text-gray-900 font-mono text-xs">{{ session.saml_response.relay_state }}</p>
+                        <p class="text-xs text-gray-500">Maintains application state across SSO</p>
+                    </div>
+                    {% endif %}
+                    
+                    {% if session.saml_response.timestamp %}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Response Time</label>
+                        <p class="text-gray-900 text-xs">{{ session.saml_response.timestamp }}</p>
+                        <p class="text-xs text-gray-500">When SAML response was processed</p>
+                    </div>
+                    {% endif %}
+                    
+                    {% if session.saml_response.original_request_id %}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">Request ID</label>
+                        <p class="text-gray-900 font-mono text-xs">{{ session.saml_response.original_request_id }}</p>
+                        <p class="text-xs text-gray-500">Links response to original AuthnRequest</p>
+                    </div>
+                    {% endif %}
+                    
+                    {% if user.name_id %}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700">SAML NameID</label>
+                        <p class="text-gray-900 font-mono text-xs break-all">{{ user.name_id }}</p>
+                        <p class="text-xs text-gray-500">Unique identifier from identity provider</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                                 {% if session.saml_response.assertion_consumer_url %}
+                 <div>
+                     <label class="block text-xs font-medium text-gray-700">Assertion Consumer URL</label>
+                     <p class="text-gray-900 font-mono text-xs break-all">{{ session.saml_response.assertion_consumer_url }}</p>
+                     <p class="text-xs text-gray-500">Where Azure AD posted the SAML response</p>
+                 </div>
+                 {% endif %}
+                 
+                 {% if session.saml_response.response_method %}
+                 <div>
+                     <label class="block text-xs font-medium text-gray-700">HTTP Method</label>
+                     <p class="text-gray-900 font-mono text-xs">{{ session.saml_response.response_method }}</p>
+                     <p class="text-xs text-gray-500">SAML responses use HTTP POST</p>
+                 </div>
+                 {% endif %}
+                </div>
+
+                <!-- Technical Details -->
+                {% if session.saml_response.saml_response_size %}
+                <div class="bg-gray-50 border rounded-lg p-3 mt-4">
+                    <h4 class="text-xs font-semibold text-gray-700 mb-2">
+                        <i class="fas fa-info-circle text-gray-500 mr-1"></i>Technical Details
+                    </h4>
+                    <div class="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                            <span class="text-gray-600">XML Response Size:</span>
+                            <span class="font-mono ml-1">{{ session.saml_response.saml_response_size }} bytes</span>
+                        </div>
+                        {% if session.saml_response.compressed_base64_size %}
+                        <div>
+                            <span class="text-gray-600">Base64 Compressed:</span>
+                            <span class="font-mono ml-1">{{ session.saml_response.compressed_base64_size }} chars</span>
+                        </div>
+                        {% endif %}
+                        {% if session.saml_response.user_attributes_count %}
+                        <div>
+                            <span class="text-gray-600">SAML Attributes:</span>
+                            <span class="font-mono ml-1">{{ session.saml_response.user_attributes_count }} found</span>
+                        </div>
+                        {% endif %}
+                        <div>
+                            <span class="text-gray-600">Processing:</span>
+                            <span class="font-mono ml-1 {{ 'text-green-600' if 'Real' in session.saml_response.parsing_method else 'text-orange-600' }}">
+                                {{ session.saml_response.parsing_method }}
+                            </span>
+                        </div>
+                    </div>
                 </div>
                 {% endif %}
             </div>
             {% else %}
-            <div class="text-center py-8 text-gray-500">
+            <div class="text-center py-8 text-gray-500 border border-dashed border-gray-300 rounded-lg">
                 <i class="fas fa-file-alt text-4xl mb-4"></i>
-                <p>SAML response data not available</p>
-                <p class="text-xs">This is a demo simulation</p>
+                <p class="font-medium">SAML Response Data Unavailable</p>
+                <p class="text-xs">Using demo data for this session</p>
             </div>
             {% endif %}
 
@@ -201,8 +356,47 @@
 <script>
 function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
-        console.log('Token copied to clipboard');
+        // Visual feedback
+        const button = event.target.closest('button');
+        const originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-check mr-1"></i>Copied!';
+        button.classList.add('bg-green-600');
+        setTimeout(() => {
+            button.innerHTML = originalText;
+            button.classList.remove('bg-green-600');
+        }, 2000);
+        console.log('Copied to clipboard');
+    }).catch(err => {
+        console.error('Failed to copy: ', err);
+        alert('Failed to copy to clipboard. Please copy manually.');
     });
 }
+
+function toggleElement(elementId) {
+    const element = document.getElementById(elementId);
+    const button = event.target.closest('button');
+    
+    if (element.classList.contains('hidden')) {
+        element.classList.remove('hidden');
+        button.innerHTML = '<i class="fas fa-eye-slash mr-1"></i>Hide';
+    } else {
+        element.classList.add('hidden');
+        button.innerHTML = '<i class="fas fa-eye mr-1"></i>Show';
+    }
+}
+
+// Educational enhancements
+document.addEventListener('DOMContentLoaded', function() {
+    // Automatically show SAML flow timeline with animation
+    const flowSteps = document.querySelectorAll('.bg-green-500');
+    flowSteps.forEach((step, index) => {
+        setTimeout(() => {
+            step.style.transform = 'scale(1.1)';
+            setTimeout(() => {
+                step.style.transform = 'scale(1)';
+            }, 200);
+        }, index * 300);
+    });
+});
 </script>
 {% endblock %} 

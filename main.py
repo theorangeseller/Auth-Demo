@@ -711,26 +711,52 @@ def saml_callback():
                 'preferred_username': 'saml.user@demo.com'
             }
             
-            # Try to extract real data from SAML response
-            for attr in root.findall('.//saml:Attribute', namespaces):
-                attr_name = attr.get('Name', '')
-                attr_value_elem = attr.find('saml:AttributeValue', namespaces)
-                if attr_value_elem is not None:
-                    attr_value = attr_value_elem.text
-                    
-                    if 'name' in attr_name.lower():
-                        user_info['name'] = attr_value
-                    elif 'email' in attr_name.lower():
-                        user_info['email'] = attr_value
-                        user_info['preferred_username'] = attr_value
+            # Extract user information from SAML assertions with proper attribute mapping
+            extracted_attrs = {}
             
-            # Look for NameID
+            # Parse SAML attributes
+            for attr in root.findall('.//saml:Attribute', namespaces):
+                attr_name = attr.get('Name', '').lower()
+                attr_value_elem = attr.find('saml:AttributeValue', namespaces)
+                if attr_value_elem is not None and attr_value_elem.text:
+                    attr_value = attr_value_elem.text.strip()
+                    extracted_attrs[attr_name] = attr_value
+                    
+                    # Map common SAML attribute names to user info
+                    if any(x in attr_name for x in ['givenname', 'firstname', 'fname']):
+                        user_info['given_name'] = attr_value
+                    elif any(x in attr_name for x in ['surname', 'lastname', 'lname', 'familyname']):
+                        user_info['family_name'] = attr_value
+                    elif any(x in attr_name for x in ['displayname', 'name', 'fullname']):
+                        user_info['name'] = attr_value
+                    elif any(x in attr_name for x in ['email', 'emailaddress', 'mail']):
+                        user_info['email'] = attr_value
+                    elif any(x in attr_name for x in ['upn', 'userprincipalname']):
+                        user_info['preferred_username'] = attr_value
+                    elif any(x in attr_name for x in ['unique', 'userid', 'objectid']):
+                        user_info['oid'] = attr_value
+            
+            # Look for NameID (often contains email or unique identifier)
             name_id_elem = root.find('.//saml:NameID', namespaces)
-            if name_id_elem is not None:
-                user_info['name_id'] = name_id_elem.text
-                if '@' in name_id_elem.text:
-                    user_info['email'] = name_id_elem.text
-                    user_info['preferred_username'] = name_id_elem.text
+            if name_id_elem is not None and name_id_elem.text:
+                name_id_value = name_id_elem.text.strip()
+                user_info['name_id'] = name_id_value
+                # If NameID looks like email and we don't have email yet
+                if '@' in name_id_value and not user_info.get('email'):
+                    user_info['email'] = name_id_value
+                if not user_info.get('preferred_username'):
+                    user_info['preferred_username'] = name_id_value
+            
+            # Construct full name if we have parts but not full name
+            if not user_info.get('name') and user_info.get('given_name') and user_info.get('family_name'):
+                user_info['name'] = f"{user_info['given_name']} {user_info['family_name']}"
+            
+            # Fallback: use email as username if no username specified
+            if not user_info.get('preferred_username') and user_info.get('email'):
+                user_info['preferred_username'] = user_info['email']
+            
+            # Store all extracted attributes for educational display
+            user_info['saml_attributes'] = extracted_attrs
                     
         except Exception as parse_error:
             # Fallback to demo data if parsing fails
@@ -746,13 +772,20 @@ def saml_callback():
         # Store user info in session
         session['user'] = user_info
         
-        # Store SAML response info for display
+        # Store SAML response info for educational display
+        full_response = decoded_response.decode('utf-8', errors='ignore')
         session['saml_response'] = {
-            'saml_response': decoded_response.decode('utf-8', errors='ignore')[:500] + '...' if len(decoded_response) > 500 else decoded_response.decode('utf-8', errors='ignore'),
+            'saml_response': full_response,  # Store full response for educational purposes
+            'saml_response_size': len(decoded_response),
             'relay_state': relay_state,
             'assertion_consumer_url': request.url,
             'timestamp': datetime.now().isoformat(),
-            'original_request_id': session.get('saml_request_id', 'unknown')
+            'original_request_id': session.get('saml_request_id', 'unknown'),
+            'response_method': request.method,  # Should be POST for SAML
+            'compressed_base64_size': len(saml_response) if saml_response else 0,
+            'user_attributes_count': len(extracted_attrs),
+            'has_name_id': bool(user_info.get('name_id')),
+            'parsing_method': 'Real SAML Response' if 'saml:Assertion' in full_response else 'Demo Fallback'
         }
         
         flash('SAML SSO authentication successful!', 'success')
