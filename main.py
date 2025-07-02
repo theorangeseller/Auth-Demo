@@ -8,6 +8,8 @@ import jwt
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+import xml.etree.ElementTree as ET
+import urllib.parse
 
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from flask_session import Session
@@ -78,6 +80,48 @@ def _build_auth_code_flow(authority=None, scopes=None):
         scopes or DEFAULT_SCOPE,
         redirect_uri=config['redirect_uri'])
 
+def generate_simple_saml_authn_request(issuer, acs_url, destination, name_id_format=None, relay_state=None):
+    """Generate a simple SAML AuthnRequest XML without xmlsec dependency"""
+    request_id = f"_id{uuid.uuid4().hex}"
+    issue_instant = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+    
+    # Create a simple XML AuthnRequest using string formatting
+    # This is a basic implementation for demo purposes
+    xml_template = '''<?xml version="1.0" encoding="UTF-8"?>
+<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
+                    xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
+                    ID="{request_id}"
+                    Version="2.0"
+                    IssueInstant="{issue_instant}"
+                    Destination="{destination}"
+                    ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+                    AssertionConsumerServiceURL="{acs_url}">
+    <saml:Issuer>{issuer}</saml:Issuer>
+    <samlp:NameIDPolicy Format="{name_id_format}" AllowCreate="true"/>
+    <samlp:RequestedAuthnContext Comparison="exact">
+        <saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef>
+    </samlp:RequestedAuthnContext>
+</samlp:AuthnRequest>'''
+    
+    xml_str = xml_template.format(
+        request_id=request_id,
+        issue_instant=issue_instant,
+        destination=destination,
+        acs_url=acs_url,
+        issuer=issuer,
+        name_id_format=name_id_format or "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+    )
+    
+    # Base64 encode for URL (without compression for now)
+    import base64
+    b64_request = base64.b64encode(xml_str.encode('utf-8')).decode('ascii')
+    
+    return {
+        'xml': xml_str,
+        'base64': b64_request,
+        'request_id': request_id
+    }
+
 @app.route('/')
 def index():
     """Main page with authentication method selection"""
@@ -89,22 +133,58 @@ def index():
 def configure():
     """Configure Azure AD settings"""
     if request.method == 'POST':
-        # Save configuration to session
-        azure_config = {
-            'tenant_id': request.form.get('tenant_id', '').strip(),
-            'client_id': request.form.get('client_id', '').strip(),
-            'client_secret': request.form.get('client_secret', '').strip(),
-            'redirect_uri': request.form.get('redirect_uri', DEFAULT_REDIRECT_URI).strip()
-        }
+        # Get form data
+        tenant_id = request.form.get('tenant_id', '').strip()
+        client_id = request.form.get('client_id', '').strip()
+        client_secret = request.form.get('client_secret', '').strip()
+        redirect_uri = request.form.get('redirect_uri', DEFAULT_REDIRECT_URI).strip()
+        config_type = request.form.get('config_type', 'full')
         
-        # Validate required fields
-        if not all([azure_config['tenant_id'], azure_config['client_id'], azure_config['client_secret']]):
-            flash('All fields except Redirect URI are required', 'error')
-            return render_template('configure.html', config=azure_config)
-        
-        session['azure_config'] = azure_config
-        flash('Azure AD configuration saved successfully!', 'success')
-        return redirect(url_for('index'))
+        # Validate based on configuration type
+        if config_type == 'saml_only':
+            # For SAML, only tenant ID is required
+            if not tenant_id:
+                flash('Tenant ID is required for SAML configuration', 'error')
+                return render_template('configure.html', config={
+                    'tenant_id': tenant_id,
+                    'client_id': 'your-client-id',
+                    'client_secret': 'your-client-secret',
+                    'redirect_uri': redirect_uri
+                })
+            
+            # Save SAML-only configuration
+            azure_config = {
+                'tenant_id': tenant_id,
+                'client_id': 'your-client-id',
+                'client_secret': 'your-client-secret',
+                'redirect_uri': redirect_uri
+            }
+            
+            session['azure_config'] = azure_config
+            flash('SAML configuration saved successfully! You can now test SAML SSO flow.', 'success')
+            return redirect(url_for('saml_builder'))
+        else:
+            # For full configuration (OAuth/OIDC), all fields are required
+            if not all([tenant_id, client_id, client_secret]):
+                flash('All fields except Redirect URI are required for full configuration', 'error')
+                return render_template('configure.html', config={
+                    'tenant_id': tenant_id,
+                    'client_id': client_id,
+                    'client_secret': client_secret,
+                    'redirect_uri': redirect_uri
+                })
+            
+            # Save full configuration
+            azure_config = {
+                'tenant_id': tenant_id,
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'redirect_uri': redirect_uri
+            }
+            
+            session['azure_config'] = azure_config
+            flash('Azure AD configuration saved successfully!', 'success')
+            return redirect(url_for('index'))
     
     # GET request - show configuration form
     current_config = get_azure_config()
@@ -137,6 +217,31 @@ def saml_builder():
     config = get_azure_config()
     is_configured = is_saml_configured()  # For SAML, only check if tenant ID is configured
     return render_template('saml.html', azure_config=config, is_configured=is_configured)
+
+@app.route('/saml/metadata')
+def saml_metadata():
+    """Generate SAML Service Provider metadata"""
+    try:
+        # Get base URL from request
+        base_url = request.url_root.rstrip('/')
+        
+        # Create simple metadata XML using string formatting
+        metadata_template = '''<?xml version="1.0" encoding="UTF-8"?>
+<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"
+                     entityID="{base_url}/saml/metadata">
+    <md:SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+        <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+                                     Location="{base_url}/auth/saml/callback"
+                                     index="0"/>
+    </md:SPSSODescriptor>
+</md:EntityDescriptor>'''
+        
+        metadata_xml = metadata_template.format(base_url=base_url)
+        
+        return metadata_xml, 200, {'Content-Type': 'application/samlmetadata+xml'}
+        
+    except Exception as e:
+        return f'Error generating metadata: {str(e)}', 500
 
 @app.route('/api/oauth2/build-url', methods=['POST'])
 def build_oauth2_url():
@@ -227,33 +332,51 @@ def build_oidc_url():
 
 @app.route('/api/saml/build-url', methods=['POST'])
 def build_saml_url():
-    """Build SAML SSO URL"""
+    """Build SAML SSO URL with proper AuthnRequest"""
     try:
         data = request.get_json()
         
         # Extract SAML parameters
         tenant_id = data.get('tenant_id', get_azure_config()['tenant_id'])
-        app_id = data.get('app_id', get_azure_config()['client_id'])
         relay_state = data.get('relay_state', '')
         
-        # Build SAML SSO URL
-        saml_url = f"https://login.microsoftonline.com/{tenant_id}/saml2"
+        # Get base URL from request
+        base_url = request.url_root.rstrip('/')
         
+        # Generate SAML AuthnRequest
+        issuer = f"{base_url}/saml/metadata"
+        acs_url = f"{base_url}/auth/saml/callback"
+        destination = f"https://login.microsoftonline.com/{tenant_id}/saml2"
+        
+        authn_request = generate_simple_saml_authn_request(
+            issuer=issuer,
+            acs_url=acs_url,
+            destination=destination,
+            name_id_format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+            relay_state=relay_state
+        )
+        
+        # Build SAML SSO URL with proper parameters
         params = {
-            'SAMLRequest': 'base64_encoded_saml_request_here',
-            'RelayState': relay_state
+            'SAMLRequest': authn_request['base64']
         }
         
         if relay_state:
-            saml_url += "?" + urlencode(params)
+            params['RelayState'] = relay_state
+        
+        saml_url = f"{destination}?" + urlencode(params)
         
         return jsonify({
             'success': True,
             'saml_url': saml_url,
+            'authn_request_xml': authn_request['xml'],
             'parameters': {
                 'tenant_id': tenant_id,
-                'app_id': app_id,
-                'relay_state': relay_state
+                'issuer': issuer,
+                'acs_url': acs_url,
+                'destination': destination,
+                'relay_state': relay_state,
+                'request_id': authn_request['request_id']
             }
         })
         
@@ -330,26 +453,42 @@ def saml_login():
         # Store authentication method in session
         session['auth_method'] = 'saml'
         
-        # Generate SAML AuthnRequest
+        # Get configuration
         config = get_azure_config()
         tenant_id = config['tenant_id']
         
-        # SAML SSO URL for Azure AD
-        saml_sso_url = f"https://login.microsoftonline.com/{tenant_id}/saml2"
+        # Get base URL from request
+        base_url = request.url_root.rstrip('/')
         
-        # For demo purposes, we'll redirect directly to Azure AD SAML endpoint
-        # In a real implementation, you'd generate a proper SAML AuthnRequest
-        saml_params = {
-            'RelayState': 'saml-demo-state'
-        }
+        # Generate SAML AuthnRequest
+        issuer = f"{base_url}/saml/metadata"
+        acs_url = f"{base_url}/auth/saml/callback"
+        destination = f"https://login.microsoftonline.com/{tenant_id}/saml2"
+        relay_state = 'saml-demo-state'
+        
+        authn_request = generate_simple_saml_authn_request(
+            issuer=issuer,
+            acs_url=acs_url,
+            destination=destination,
+            name_id_format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+            relay_state=relay_state
+        )
         
         # Store SAML session info
-        session['saml_relay_state'] = saml_params['RelayState']
+        session['saml_relay_state'] = relay_state
+        session['saml_request_id'] = authn_request['request_id']
         
-        flash('SAML SSO flow initiated - redirecting to Azure AD SAML endpoint', 'info')
+        # Build redirect URL with SAMLRequest
+        params = {
+            'SAMLRequest': authn_request['base64'],
+            'RelayState': relay_state
+        }
         
-        # For demo: redirect to SAML SSO URL (this would normally include a SAMLRequest parameter)
-        return redirect(f"{saml_sso_url}?{urlencode(saml_params)}")
+        saml_url = f"{destination}?" + urlencode(params)
+        
+        flash('SAML SSO flow initiated with proper AuthnRequest', 'info')
+        
+        return redirect(saml_url)
         
     except Exception as e:
         flash(f'SAML SSO login error: {str(e)}', 'error')
@@ -396,7 +535,7 @@ def auth_callback():
 def saml_callback():
     """Handle SAML response from Azure AD"""
     try:
-        # In a real implementation, you'd validate the SAML response here
+        # Get SAML response data
         saml_response = request.form.get('SAMLResponse') or request.args.get('SAMLResponse')
         relay_state = request.form.get('RelayState') or request.args.get('RelayState')
         
@@ -404,24 +543,70 @@ def saml_callback():
             flash('No SAML response received', 'error')
             return redirect(url_for('index'))
         
-        # For demo purposes, we'll simulate processing the SAML response
-        # In reality, you'd parse and validate the XML SAML response
+        # Decode the SAML response
+        try:
+            decoded_response = base64.b64decode(saml_response)
+            
+            # Parse the XML to extract user information
+            # For demo purposes, we'll do basic parsing - in production you'd validate signatures
+            root = ET.fromstring(decoded_response)
+            
+            # Define namespaces for ElementTree
+            namespaces = {
+                'saml': 'urn:oasis:names:tc:SAML:2.0:assertion',
+                'samlp': 'urn:oasis:names:tc:SAML:2.0:protocol'
+            }
+            
+            # Extract user information from SAML assertion using basic ElementTree
+            user_info = {
+                'auth_method': 'SAML SSO',
+                'name': 'SAML User',
+                'email': 'saml.user@demo.com',
+                'preferred_username': 'saml.user@demo.com'
+            }
+            
+            # Try to extract real data from SAML response
+            for attr in root.findall('.//saml:Attribute', namespaces):
+                attr_name = attr.get('Name', '')
+                attr_value_elem = attr.find('saml:AttributeValue', namespaces)
+                if attr_value_elem is not None:
+                    attr_value = attr_value_elem.text
+                    
+                    if 'name' in attr_name.lower():
+                        user_info['name'] = attr_value
+                    elif 'email' in attr_name.lower():
+                        user_info['email'] = attr_value
+                        user_info['preferred_username'] = attr_value
+            
+            # Look for NameID
+            name_id_elem = root.find('.//saml:NameID', namespaces)
+            if name_id_elem is not None:
+                user_info['name_id'] = name_id_elem.text
+                if '@' in name_id_elem.text:
+                    user_info['email'] = name_id_elem.text
+                    user_info['preferred_username'] = name_id_elem.text
+                    
+        except Exception as parse_error:
+            # Fallback to demo data if parsing fails
+            user_info = {
+                'name': 'SAML Demo User',
+                'email': 'saml.user@demo.com',
+                'oid': 'saml-user-id-demo',
+                'preferred_username': 'saml.user@demo.com',
+                'auth_method': 'SAML SSO'
+            }
+            print(f"SAML parsing error (using demo data): {parse_error}")
         
-        # Simulate user info from SAML assertion
-        session['user'] = {
-            'name': 'SAML Demo User',
-            'email': 'saml.user@demo.com',
-            'oid': 'saml-user-id-demo',
-            'preferred_username': 'saml.user@demo.com',
-            'auth_method': 'SAML SSO'
-        }
+        # Store user info in session
+        session['user'] = user_info
         
-        # Store SAML response info
+        # Store SAML response info for display
         session['saml_response'] = {
-            'saml_response': saml_response[:100] + '...' if len(saml_response) > 100 else saml_response,
+            'saml_response': decoded_response.decode('utf-8', errors='ignore')[:500] + '...' if len(decoded_response) > 500 else decoded_response.decode('utf-8', errors='ignore'),
             'relay_state': relay_state,
             'assertion_consumer_url': request.url,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'original_request_id': session.get('saml_request_id', 'unknown')
         }
         
         flash('SAML SSO authentication successful!', 'success')

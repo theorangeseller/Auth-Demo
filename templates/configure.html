@@ -3,7 +3,7 @@
 {% block title %}Azure AD Configuration{% endblock %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto">
+<div class="max-w-4xl mx-auto" x-data="configForm()">
     <div class="bg-white rounded-lg shadow-md p-6">
         <div class="flex items-center mb-6">
             <svg class="w-8 h-8 text-blue-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -27,9 +27,30 @@
             {% endif %}
         {% endwith %}
 
-        <!-- Instructions -->
+        <!-- Configuration Mode Selection -->
         <div class="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
-            <h2 class="text-lg font-semibold text-blue-800 mb-2">Setup Instructions</h2>
+            <h2 class="text-lg font-semibold text-blue-800 mb-4">Configuration Mode</h2>
+            <div class="space-y-3">
+                <label class="flex items-center">
+                    <input type="radio" x-model="configMode" value="saml_only" name="config_mode" class="mr-3">
+                    <div>
+                        <div class="font-medium text-blue-800">SAML SSO Only</div>
+                        <div class="text-sm text-blue-700">Configure only Tenant ID for SAML SSO testing (Enterprise Application)</div>
+                    </div>
+                </label>
+                <label class="flex items-center">
+                    <input type="radio" x-model="configMode" value="full" name="config_mode" class="mr-3">
+                    <div>
+                        <div class="font-medium text-blue-800">Full Configuration</div>
+                        <div class="text-sm text-blue-700">Configure all settings for OAuth 2.0, OIDC, and SAML (App Registration)</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg" x-show="configMode === 'full'">
+            <h2 class="text-lg font-semibold text-blue-800 mb-2">Setup Instructions - App Registration</h2>
             <div class="text-blue-700 space-y-2">
                 <p><strong>1. Create an Azure AD App Registration:</strong></p>
                 <ul class="list-disc list-inside ml-4 space-y-1">
@@ -47,11 +68,25 @@
             </div>
         </div>
 
+        <div class="mb-6 p-4 bg-purple-50 border-l-4 border-purple-500 rounded-lg" x-show="configMode === 'saml_only'">
+            <h2 class="text-lg font-semibold text-purple-800 mb-2">Setup Instructions - SAML SSO Only</h2>
+            <div class="text-purple-700 space-y-2">
+                <p><strong>For SAML SSO testing, you only need your Tenant ID:</strong></p>
+                <ul class="list-disc list-inside ml-4 space-y-1">
+                    <li>Get your <strong>Tenant ID</strong> from Azure Portal > Azure Active Directory > Overview</li>
+                    <li>SAML uses Enterprise Applications, not App Registrations</li>
+                    <li>Configure the Enterprise Application with the URLs provided in the SAML section</li>
+                </ul>
+            </div>
+        </div>
+
         <!-- Configuration Form -->
         <form method="POST" class="space-y-6">
+            <input type="hidden" name="config_type" :value="configMode">
+            
             <div class="grid md:grid-cols-2 gap-6">
                 <!-- Tenant ID -->
-                <div>
+                <div class="md:col-span-2">
                     <label for="tenant_id" class="block text-sm font-medium text-gray-700 mb-2">
                         Tenant ID *
                         <span class="text-gray-500 font-normal">(Directory ID)</span>
@@ -66,8 +101,8 @@
                     <p class="mt-1 text-sm text-gray-500">Your Azure AD tenant (directory) ID</p>
                 </div>
 
-                <!-- Client ID -->
-                <div>
+                <!-- Client ID (only for full config) -->
+                <div x-show="configMode === 'full'">
                     <label for="client_id" class="block text-sm font-medium text-gray-700 mb-2">
                         Client ID *
                         <span class="text-gray-500 font-normal">(Application ID)</span>
@@ -78,12 +113,12 @@
                            value="{{ config.client_id if config.client_id != 'your-client-id' else '' }}"
                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                            placeholder="00000000-0000-0000-0000-000000000000"
-                           required>
+                           :required="configMode === 'full'">
                     <p class="mt-1 text-sm text-gray-500">Your app registration's application ID</p>
                 </div>
 
-                <!-- Client Secret -->
-                <div class="md:col-span-2">
+                <!-- Client Secret (only for full config) -->
+                <div x-show="configMode === 'full'">
                     <label for="client_secret" class="block text-sm font-medium text-gray-700 mb-2">
                         Client Secret *
                         <span class="text-gray-500 font-normal">(Application Secret)</span>
@@ -94,12 +129,12 @@
                            value="{{ config.client_secret if config.client_secret != 'your-client-secret' else '' }}"
                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                            placeholder="Enter your client secret"
-                           required>
+                           :required="configMode === 'full'">
                     <p class="mt-1 text-sm text-gray-500">Create a client secret in the "Certificates & secrets" section</p>
                 </div>
 
                 <!-- Redirect URI -->
-                <div class="md:col-span-2">
+                <div class="md:col-span-2" x-show="configMode === 'full'">
                     <label for="redirect_uri" class="block text-sm font-medium text-gray-700 mb-2">
                         Redirect URI
                         <span class="text-gray-500 font-normal">(Callback URL)</span>
@@ -118,7 +153,7 @@
             <div class="flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200">
                 <button type="submit" 
                         class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors">
-                    Save Configuration
+                    <span x-text="configMode === 'saml_only' ? 'Save SAML Configuration' : 'Save Full Configuration'"></span>
                 </button>
                 
                 <a href="{{ url_for('index') }}" 
@@ -142,9 +177,14 @@
             <h3 class="text-lg font-semibold text-green-800 mb-2">Current Configuration</h3>
             <div class="text-green-700 space-y-1">
                 <p><strong>Tenant ID:</strong> {{ config.tenant_id }}</p>
+                {% if config.client_id != 'your-client-id' %}
                 <p><strong>Client ID:</strong> {{ config.client_id }}</p>
                 <p><strong>Client Secret:</strong> ••••••••••••••••</p>
                 <p><strong>Redirect URI:</strong> {{ config.redirect_uri }}</p>
+                <p class="text-green-600 font-medium">✅ Full configuration (OAuth 2.0, OIDC, SAML)</p>
+                {% else %}
+                <p class="text-purple-600 font-medium">✅ SAML-only configuration</p>
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -152,6 +192,26 @@
 </div>
 
 <script>
+function configForm() {
+    return {
+        configMode: 'full',
+        
+        init() {
+            // Auto-detect current config mode based on existing configuration
+            const clientId = '{{ config.client_id }}';
+            const tenantId = '{{ config.tenant_id }}';
+            
+            if (tenantId !== 'your-tenant-id' && clientId === 'your-client-id') {
+                this.configMode = 'saml_only';
+            } else if (tenantId !== 'your-tenant-id' && clientId !== 'your-client-id') {
+                this.configMode = 'full';
+            } else {
+                this.configMode = 'full';
+            }
+        }
+    }
+}
+
 function clearConfig() {
     if (confirm('Are you sure you want to clear the Azure AD configuration?')) {
         fetch('/api/config/clear', {
