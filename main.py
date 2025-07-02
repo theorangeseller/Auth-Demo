@@ -857,11 +857,13 @@ def saml_callback():
             if name_id_elem is not None and name_id_elem.text:
                 name_id_value = name_id_elem.text.strip()
                 user_info['name_id'] = name_id_value
+                
+                # NameID is the primary unique identifier in SAML - use it as UPN
+                user_info['preferred_username'] = name_id_value
+                
                 # If NameID looks like email and we don't have email yet
                 if '@' in name_id_value and not user_info.get('email'):
                     user_info['email'] = name_id_value
-                if not user_info.get('preferred_username'):
-                    user_info['preferred_username'] = name_id_value
             
             # Construct full name if we have parts but not full name
             if not user_info.get('name') and user_info.get('given_name') and user_info.get('family_name'):
@@ -891,25 +893,62 @@ def saml_callback():
         # Store SAML response info for educational display
         full_response = decoded_response.decode('utf-8', errors='ignore')
         
-        # Perform signature verification if we have federation metadata
+        # Extract SAML assertion separately for educational purposes
+        saml_assertion = None
+        try:
+            # Find the assertion element within the response
+            assertion_elem = root.find('.//saml:Assertion', namespaces)
+            if assertion_elem is not None:
+                # Convert assertion element back to XML string
+                saml_assertion = ET.tostring(assertion_elem, encoding='unicode', method='xml')
+        except Exception as assertion_error:
+            print(f"Could not extract SAML assertion: {assertion_error}")
+        
+        # Perform signature verification if we have federation metadata or uploaded certificates
         signature_verification = None
         federation_metadata = session.get('federation_metadata')
+        uploaded_certificates = session.get('uploaded_certificates', [])
+        
+        certificates_to_use = None
+        cert_source = None
+        
         if federation_metadata and federation_metadata.get('signing_certificates'):
+            certificates_to_use = federation_metadata['signing_certificates']
+            cert_source = 'federation_metadata'
+        elif uploaded_certificates:
+            # Convert uploaded certificates to the format expected by verify_saml_signature
+            certificates_to_use = []
+            for cert_info in uploaded_certificates:
+                certificates_to_use.append({
+                    'pem': cert_info['pem'],
+                    'subject': cert_info['subject'],
+                    'not_after': cert_info['not_after'],
+                    'index': len(certificates_to_use)
+                })
+            cert_source = 'uploaded_certificates'
+        
+        if certificates_to_use:
             try:
                 signature_verification = verify_saml_signature(
                     full_response, 
-                    federation_metadata['signing_certificates']
+                    certificates_to_use
                 )
+                # Add source information
+                if signature_verification:
+                    signature_verification['certificate_source'] = cert_source
             except Exception as sig_error:
                 signature_verification = {
                     'verified': False,
                     'error': f'Signature verification failed: {str(sig_error)}',
-                    'details': [f'❌ Verification error: {str(sig_error)}']
+                    'details': [f'❌ Verification error: {str(sig_error)}'],
+                    'certificate_source': cert_source
                 }
         
         session['saml_response'] = {
             'saml_response': full_response,  # Store full response for educational purposes
+            'saml_assertion': saml_assertion,  # Store extracted assertion separately
             'saml_response_size': len(decoded_response),
+            'saml_assertion_size': len(saml_assertion) if saml_assertion else 0,
             'relay_state': relay_state,
             'assertion_consumer_url': request.url,
             'timestamp': datetime.now().isoformat(),
@@ -981,6 +1020,77 @@ def validate_token():
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/upload_certificate', methods=['POST'])
+def upload_certificate():
+    """
+    Optional feature: Upload SAML signing certificate for verification
+    This is a nice-to-have educational feature for understanding SAML security
+    """
+    try:
+        if 'certificate' not in request.files:
+            return jsonify({'error': 'No certificate file provided'}), 400
+        
+        cert_file = request.files['certificate']
+        if cert_file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Read the certificate content
+        cert_content = cert_file.read().decode('utf-8')
+        
+        # Basic validation - check if it looks like a certificate
+        if 'BEGIN CERTIFICATE' not in cert_content or 'END CERTIFICATE' not in cert_content:
+            return jsonify({'error': 'Invalid certificate format. Please upload a PEM or Base64 certificate.'}), 400
+        
+        # Store in session for this demo (in production, you'd store this more securely)
+        if 'uploaded_certificates' not in session:
+            session['uploaded_certificates'] = []
+        
+        # Parse certificate to get basic info
+        try:
+            from cryptography import x509
+            from cryptography.hazmat.backends import default_backend
+            import base64
+            
+            # Handle both PEM and raw base64 formats
+            if '-----BEGIN CERTIFICATE-----' in cert_content:
+                cert_pem = cert_content
+            else:
+                # Assume it's raw base64, add PEM headers
+                clean_b64 = cert_content.replace('\n', '').replace('\r', '').replace(' ', '')
+                cert_pem = f"-----BEGIN CERTIFICATE-----\n{clean_b64}\n-----END CERTIFICATE-----"
+            
+            cert = x509.load_pem_x509_certificate(cert_pem.encode(), default_backend())
+            
+            cert_info = {
+                'pem': cert_pem,
+                'subject': cert.subject.rfc4514_string(),
+                'issuer': cert.issuer.rfc4514_string(),
+                'not_after': cert.not_valid_after.isoformat(),
+                'not_before': cert.not_valid_before.isoformat(),
+                'serial_number': str(cert.serial_number),
+                'uploaded_at': datetime.now().isoformat(),
+                'filename': cert_file.filename
+            }
+            
+            session['uploaded_certificates'].append(cert_info)
+            session.modified = True
+            
+            return jsonify({
+                'success': True,
+                'message': 'Certificate uploaded successfully!',
+                'certificate_info': {
+                    'subject': cert_info['subject'],
+                    'valid_until': cert_info['not_after'],
+                    'filename': cert_info['filename']
+                }
+            })
+            
+        except Exception as parse_error:
+            return jsonify({'error': f'Failed to parse certificate: {str(parse_error)}'}), 400
+        
+    except Exception as e:
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=3000)
