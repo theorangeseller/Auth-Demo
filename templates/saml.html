@@ -341,15 +341,21 @@
 function samlBuilder() {
     return {
         get entityId() {
-            return `${window.location.origin}/saml/metadata`;
+            // Ensure HTTPS for Azure Web Apps
+            const origin = window.location.origin.replace('http://', 'https://');
+            return `${origin}/saml/metadata`;
         },
 
         get replyUrl() {
-            return `${window.location.origin}/auth/saml/callback`;
+            // Ensure HTTPS for Azure Web Apps  
+            const origin = window.location.origin.replace('http://', 'https://');
+            return `${origin}/auth/saml/callback`;
         },
 
         get signOnUrl() {
-            return `${window.location.origin}/saml/login`;
+            // Ensure HTTPS for Azure Web Apps
+            const origin = window.location.origin.replace('http://', 'https://');
+            return `${origin}/saml/login`;
         },
 
         copyToClipboard(text) {

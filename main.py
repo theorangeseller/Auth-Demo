@@ -311,12 +311,26 @@ def saml_builder():
                          is_configured=is_configured,
                          federation_metadata=federation_metadata)
 
+def get_public_base_url():
+    """Get the public base URL, ensuring HTTPS for Azure Web Apps"""
+    base_url = request.url_root.rstrip('/')
+    
+    # For Azure Web Apps, force HTTPS for public URLs
+    if 'azurewebsites.net' in request.host:
+        base_url = base_url.replace('http://', 'https://')
+    
+    # Handle X-Forwarded-Proto header (common in cloud deployments)
+    if request.headers.get('X-Forwarded-Proto') == 'https':
+        base_url = base_url.replace('http://', 'https://')
+    
+    return base_url
+
 @app.route('/saml/metadata')
 def saml_metadata():
     """Generate SAML Service Provider metadata"""
     try:
-        # Get base URL from request
-        base_url = request.url_root.rstrip('/')
+        # Get public base URL with proper HTTPS
+        base_url = get_public_base_url()
         
         # Create simple metadata XML using string formatting
         metadata_template = '''<?xml version="1.0" encoding="UTF-8"?>
@@ -459,8 +473,8 @@ def build_saml_url():
         tenant_id = data.get('tenant_id', get_azure_config()['tenant_id'])
         relay_state = data.get('relay_state', '')
         
-        # Get base URL from request
-        base_url = request.url_root.rstrip('/')
+        # Get public base URL with proper HTTPS
+        base_url = get_public_base_url()
         
         # Use federation metadata if available, otherwise fallback
         federation_metadata = session.get('federation_metadata')
@@ -583,8 +597,8 @@ def saml_login():
         config = get_azure_config()
         tenant_id = config['tenant_id']
         
-        # Get base URL from request
-        base_url = request.url_root.rstrip('/')
+        # Get public base URL with proper HTTPS
+        base_url = get_public_base_url()
         
         # Use federation metadata if available, otherwise fallback
         federation_metadata = session.get('federation_metadata')
