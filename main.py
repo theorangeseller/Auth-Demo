@@ -47,7 +47,9 @@ def get_azure_config():
         'client_secret': session.get('azure_config', {}).get('client_secret') or 
                         os.getenv('CLIENT_SECRET') or 'your-client-secret',
         'redirect_uri': session.get('azure_config', {}).get('redirect_uri') or 
-                       os.getenv('REDIRECT_URI') or DEFAULT_REDIRECT_URI
+                       os.getenv('REDIRECT_URI') or DEFAULT_REDIRECT_URI,
+        'app_id': session.get('azure_config', {}).get('app_id') or 
+                 os.getenv('APP_ID') or 'your-app-id'
     }
     return config
 
@@ -59,9 +61,10 @@ def is_azure_configured():
             config['client_secret'] != 'your-client-secret')
 
 def is_saml_configured():
-    """Check if SAML is configured (only needs tenant ID)"""
+    """Check if SAML is configured (needs tenant ID and app ID for best security)"""
     config = get_azure_config()
-    return config['tenant_id'] != 'your-tenant-id'
+    return (config['tenant_id'] != 'your-tenant-id' and 
+            config['app_id'] != 'your-app-id')
 
 def get_authority():
     """Get authority URL based on current configuration"""
@@ -84,10 +87,15 @@ def _build_auth_code_flow(authority=None, scopes=None):
         scopes or DEFAULT_SCOPE,
         redirect_uri=config['redirect_uri'])
 
-def fetch_azure_federation_metadata(tenant_id):
-    """Fetch Azure AD federation metadata for the given tenant"""
+def fetch_azure_federation_metadata(tenant_id, app_id=None):
+    """Fetch Azure AD federation metadata for the given tenant and optionally app"""
     try:
-        metadata_url = f"https://login.microsoftonline.com/{tenant_id}/federationmetadata/2007-06/federationmetadata.xml"
+        if app_id and app_id != 'your-app-id':
+            # Use application-specific metadata URL for better security
+            metadata_url = f"https://login.microsoftonline.com/{tenant_id}/federationmetadata/2007-06/federationmetadata.xml?appid={app_id}"
+        else:
+            # Fallback to tenant-level metadata
+            metadata_url = f"https://login.microsoftonline.com/{tenant_id}/federationmetadata/2007-06/federationmetadata.xml"
         
         response = requests.get(metadata_url, timeout=10)
         response.raise_for_status()
@@ -332,18 +340,20 @@ def configure():
         client_id = request.form.get('client_id', '').strip()
         client_secret = request.form.get('client_secret', '').strip()
         redirect_uri = request.form.get('redirect_uri', DEFAULT_REDIRECT_URI).strip()
+        app_id = request.form.get('app_id', '').strip()
         config_type = request.form.get('config_type', 'full')
         
         # Validate based on configuration type
         if config_type == 'saml_only':
-            # For SAML, only tenant ID is required
-            if not tenant_id:
-                flash('Tenant ID is required for SAML configuration', 'error')
+            # For SAML, tenant ID and app ID are required for best security
+            if not tenant_id or not app_id:
+                flash('Tenant ID and Application ID are required for SAML configuration', 'error')
                 return render_template('configure.html', config={
                     'tenant_id': tenant_id,
                     'client_id': 'your-client-id',
                     'client_secret': 'your-client-secret',
-                    'redirect_uri': redirect_uri
+                    'redirect_uri': redirect_uri,
+                    'app_id': app_id
                 })
             
             # Save SAML-only configuration
@@ -351,13 +361,15 @@ def configure():
                 'tenant_id': tenant_id,
                 'client_id': 'your-client-id',
                 'client_secret': 'your-client-secret',
-                'redirect_uri': redirect_uri
+                'redirect_uri': redirect_uri,
+                'app_id': app_id
             }
             
             session['azure_config'] = azure_config
             
             # Fetch and cache federation metadata
-            metadata = fetch_azure_federation_metadata(tenant_id)
+            app_id = azure_config.get('app_id')
+            metadata = fetch_azure_federation_metadata(tenant_id, app_id)
             if metadata:
                 session['federation_metadata'] = metadata
                 flash('SAML configuration saved successfully! Federation metadata fetched from Azure AD.', 'success')
@@ -373,7 +385,8 @@ def configure():
                     'tenant_id': tenant_id,
                     'client_id': client_id,
                     'client_secret': client_secret,
-                    'redirect_uri': redirect_uri
+                    'redirect_uri': redirect_uri,
+                    'app_id': app_id
                 })
             
             # Save full configuration
@@ -381,7 +394,8 @@ def configure():
                 'tenant_id': tenant_id,
                 'client_id': client_id,
                 'client_secret': client_secret,
-                'redirect_uri': redirect_uri
+                'redirect_uri': redirect_uri,
+                'app_id': app_id if app_id else 'your-app-id'
             }
             
             session['azure_config'] = azure_config
@@ -419,7 +433,7 @@ def oidc_builder():
 def saml_builder():
     """SAML SSO Configuration page"""
     config = get_azure_config()
-    is_configured = is_saml_configured()  # For SAML, only check if tenant ID is configured
+    is_configured = is_saml_configured()  # For SAML, check if tenant ID AND app ID are configured
     
     # Get federation metadata if available
     federation_metadata = session.get('federation_metadata')
@@ -484,7 +498,8 @@ def get_federation_metadata():
             return jsonify({'success': True, 'metadata': cached_metadata})
         
         # Fetch fresh metadata
-        metadata = fetch_azure_federation_metadata(tenant_id)
+        app_id = config['app_id']
+        metadata = fetch_azure_federation_metadata(tenant_id, app_id)
         if metadata:
             session['federation_metadata'] = metadata
             return jsonify({'success': True, 'metadata': metadata})
