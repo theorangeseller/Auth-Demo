@@ -1,356 +1,231 @@
 {% extends "base.html" %}
 
-{% block title %}OpenID Connect Builder - Authentication Demo{% endblock %}
+{% block title %}OpenID Connect Authentication{% endblock %}
 
 {% block content %}
-<div class="px-4 sm:px-6 lg:px-8" x-data="oidcBuilder()">
-    <!-- Header -->
-    <div class="text-center mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">OpenID Connect URL Builder</h1>
-        <p class="mt-2 text-gray-600">Generate OpenID Connect authorization URLs for Microsoft Entra ID</p>
-    </div>
+<div class="container mx-auto px-4 py-8" x-data="oidcFlow()">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-900 mb-8">OpenID Connect Authentication</h1>
+        
+        <p class="text-gray-600 mb-6">
+            OpenID Connect (OIDC) is an identity layer built on top of OAuth 2.0. It allows applications to verify user identity and obtain basic profile information through standardized JSON Web Tokens (JWTs). Configure Azure AD App Registration for OIDC integration.
+        </p>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <!-- Configuration Form -->
-        <div class="bg-white rounded-lg shadow-md p-6">
-            <h2 class="text-xl font-semibold text-gray-900 mb-6">OpenID Connect Configuration</h2>
-            
-            <!-- Base Configuration -->
-            <div class="mb-6">
-                <h3 class="text-lg font-medium text-gray-900 mb-4">Base Configuration</h3>
-                
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Base URL Type</label>
-                    <select x-model="config.baseUrlType" @change="updateTenantId()" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="common">Common - Any organization</option>
-                        <option value="organizations">Organizations - Work/school accounts</option>
-                        <option value="consumers">Consumers - Personal accounts</option>
-                        <option value="tenant">Specific Tenant - Single organization</option>
-                    </select>
+        <!-- Configuration Check -->
+        {% if not is_configured %}
+        <div class="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <i class="fas fa-exclamation-triangle text-amber-400"></i>
                 </div>
-
-                <div class="mb-4" x-show="config.baseUrlType === 'tenant'">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Tenant ID or Name *</label>
-                    <input type="text" x-model="config.tenantId" placeholder="contoso.onmicrosoft.com or GUID" 
-                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
-                </div>
-            </div>
-
-            <!-- Essential Parameters -->
-            <div class="mb-6">
-                <h3 class="text-lg font-medium text-gray-900 mb-4">Essential Parameters</h3>
-                
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Client ID (Application ID) *</label>
-                    <input type="text" x-model="config.clientId" placeholder="12345678-1234-1234-1234-123456789012" 
-                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
-                </div>
-
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Redirect URI *</label>
-                    <input type="url" x-model="config.redirectUri" placeholder="https://your-app.com/auth/callback" 
-                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
-                </div>
-
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">OIDC Scopes *</label>
-                    <div class="mb-2">
-                        <div class="flex flex-wrap gap-2 mb-3">
-                            <button @click="toggleScope('openid')" :class="config.scopes.includes('openid') ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">
-                                openid <span class="text-xs">(Required)</span>
-                            </button>
-                            <button @click="toggleScope('profile')" :class="config.scopes.includes('profile') ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">profile</button>
-                            <button @click="toggleScope('email')" :class="config.scopes.includes('email') ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">email</button>
-                            <button @click="toggleScope('offline_access')" :class="config.scopes.includes('offline_access') ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'" class="px-3 py-1 rounded-md text-sm font-medium">offline_access</button>
-                        </div>
-                        <div class="bg-blue-50 border border-blue-200 rounded-md p-3 mb-3">
-                            <p class="text-sm text-blue-800 mb-2"><strong>OIDC Scope Information:</strong></p>
-                            <ul class="text-xs text-blue-700 space-y-1">
-                                <li><strong>openid:</strong> Required for OIDC, enables ID token</li>
-                                <li><strong>profile:</strong> Access to user's profile information</li>
-                                <li><strong>email:</strong> Access to user's email address</li>
-                                <li><strong>offline_access:</strong> Enables refresh tokens</li>
-                            </ul>
-                        </div>
+                <div class="ml-3 flex-1">
+                    <h3 class="text-lg font-medium text-amber-800">Configure Azure AD for OIDC Testing</h3>
+                    <div class="mt-2 text-amber-700">
+                        <p>Complete Azure AD configuration is required for OIDC authentication testing. This includes Client ID, Client Secret, and Tenant ID.</p>
                     </div>
-                    <textarea x-model="scopeText" @input="updateScopesFromText()" rows="2" 
-                              class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500" 
-                              placeholder="openid profile email"></textarea>
+                    <div class="mt-4">
+                        <a href="{{ url_for('configure') }}" class="bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-700 transition-colors">
+                            <i class="fas fa-cog mr-2"></i>Configure Azure AD Settings
+                        </a>
+                    </div>
                 </div>
-
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Response Type</label>
-                    <select x-model="config.responseType" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="code">code - Authorization Code Flow (Recommended)</option>
-                        <option value="id_token">id_token - Implicit Flow (ID Token only)</option>
-                        <option value="code id_token">code id_token - Hybrid Flow</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- OIDC Specific Parameters -->
-            <div class="mb-6">
-                <h3 class="text-lg font-medium text-gray-900 mb-4">OIDC Specific Parameters</h3>
-                
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Nonce *</label>
-                    <input type="text" x-model="config.nonce" placeholder="random-nonce-value" 
-                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
-                    <p class="text-xs text-gray-500 mt-1">Required for OIDC to prevent replay attacks</p>
-                </div>
-
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Max Age (seconds)</label>
-                    <input type="number" x-model="config.maxAge" placeholder="3600" 
-                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
-                    <p class="text-xs text-gray-500 mt-1">Maximum age of authentication in seconds</p>
-                </div>
-
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Claims (JSON)</label>
-                    <textarea x-model="config.claims" rows="3" placeholder='{"id_token": {"name": {"essential": true}}}' 
-                              class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500 font-mono text-sm"></textarea>
-                    <p class="text-xs text-gray-500 mt-1">Request specific claims in the ID token</p>
-                </div>
-            </div>
-
-            <!-- Optional Parameters -->
-            <div class="mb-6">
-                <h3 class="text-lg font-medium text-gray-900 mb-4">Optional Parameters</h3>
-                
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">State</label>
-                    <input type="text" x-model="config.state" placeholder="random-state-value" 
-                           class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
-                </div>
-
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Prompt</label>
-                    <select x-model="config.prompt" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="">Default behavior</option>
-                        <option value="login">login - Force re-authentication</option>
-                        <option value="none">none - Silent authentication</option>
-                        <option value="consent">consent - Force consent</option>
-                        <option value="select_account">select_account - Account picker</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="flex space-x-4">
-                <button @click="generateUrl()" class="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors">
-                    Generate OIDC URL
-                </button>
-                <button @click="clearForm()" class="flex-1 bg-gray-200 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-300 transition-colors">
-                    Clear Form
-                </button>
             </div>
         </div>
+        {% endif %}
 
-        <!-- Generated URL Display -->
-        <div class="bg-white rounded-lg shadow-md p-6">
-            <h2 class="text-xl font-semibold text-gray-900 mb-6">Generated OIDC URL</h2>
-            
-            <div x-show="generatedUrl" class="mb-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Authorization URL</label>
-                <div class="relative">
-                    <textarea x-model="generatedUrl" readonly rows="4" 
-                              class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 font-mono text-sm"></textarea>
-                    <button @click="copyToClipboard(generatedUrl)" 
-                            class="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700">
-                        Copy
-                    </button>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Azure AD App Registration Setup -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-6">Azure AD App Registration Setup</h2>
+                
+                <!-- Instructions -->
+                <div class="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg">
+                    <h3 class="text-lg font-semibold text-blue-800 mb-2">Setup Instructions</h3>
+                    <div class="text-blue-700 space-y-2 text-sm">
+                        <p><strong>1. Create App Registration:</strong></p>
+                        <ul class="list-disc list-inside ml-4 space-y-1">
+                            <li>Go to <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" class="underline">Azure Portal > App Registrations</a></li>
+                            <li>Click "New registration"</li>
+                            <li>Name: "AuthDemo OIDC App"</li>
+                            <li>Supported account types: Accounts in this organizational directory only</li>
+                        </ul>
+                        <p><strong>2. Configure Authentication:</strong></p>
+                        <ul class="list-disc list-inside ml-4 space-y-1">
+                            <li>Go to "Authentication" → "Add a platform" → "Web"</li>
+                            <li>Set Redirect URI as shown below</li>
+                            <li>Enable "ID tokens" under Implicit grant and hybrid flows</li>
+                        </ul>
+                        <p><strong>3. Create Client Secret:</strong></p>
+                        <ul class="list-disc list-inside ml-4 space-y-1">
+                            <li>Go to "Certificates & secrets" → "New client secret"</li>
+                            <li>Copy the secret value immediately (shown only once)</li>
+                        </ul>
+                    </div>
                 </div>
-            </div>
 
-            <div x-show="urlParameters" class="mb-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">URL Parameters</label>
-                <div class="bg-gray-50 rounded-md p-3 border">
-                    <pre x-text="urlParameters" class="text-sm font-mono whitespace-pre-wrap"></pre>
+                <!-- Required Configuration Values -->
+                <div class="space-y-4">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Required Configuration Values</h3>
+                    
+                    <div class="bg-gray-50 border rounded-lg p-4">
+                        <h4 class="font-semibold text-gray-800 mb-2">Redirect URI</h4>
+                        <div class="font-mono text-sm bg-white p-2 rounded border" x-text="redirectUri"></div>
+                        <button @click="copyToClipboard(redirectUri)" class="mt-2 text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700">
+                            Copy Redirect URI
+                        </button>
+                    </div>
+
+                    {% if azure_config.tenant_id != 'your-tenant-id' %}
+                    <div class="bg-gray-50 border rounded-lg p-4">
+                        <h4 class="font-semibold text-gray-800 mb-2">Your Configuration</h4>
+                        <div class="space-y-2 text-sm">
+                            <div><strong>Tenant ID:</strong> <span class="font-mono">{{ azure_config.tenant_id }}</span></div>
+                            <div><strong>Client ID:</strong> <span class="font-mono">{{ azure_config.client_id[:8] }}...{{ azure_config.client_id[-4:] }}</span></div>
+                            <div><strong>Client Secret:</strong> <span class="font-mono">{{ '*' * 20 if azure_config.client_secret != 'your-client-secret' else 'Not configured' }}</span></div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Test Button -->
+                <div class="mt-6">
+                    {% if is_configured %}
+                    <a href="{{ url_for('login', method='oidc') }}" 
+                       class="w-full bg-green-600 text-white text-center py-3 px-4 rounded-md hover:bg-green-700 transition-colors block">
+                        <i class="fas fa-sign-in-alt mr-2"></i>Test OIDC Authentication Flow
+                    </a>
+                    {% else %}
+                    <div class="bg-gray-100 text-gray-500 text-center py-3 px-4 rounded-md">
+                        <i class="fas fa-lock mr-2"></i>Configure Azure AD to Test OIDC Flow
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 
             <!-- OIDC Flow Information -->
-            <div class="mb-6 bg-green-50 border border-green-200 rounded-md p-4">
-                <h3 class="text-sm font-medium text-green-800 mb-2">OIDC Flow Information</h3>
-                <ul class="text-xs text-green-700 space-y-1">
-                    <li>• ID Token contains user identity information (JWT)</li>
-                    <li>• Standard claims: iss, sub, aud, exp, iat, nonce</li>
-                    <li>• Additional claims based on requested scopes</li>
-                    <li>• Can be combined with OAuth 2.0 for API access</li>
-                </ul>
-            </div>
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-6">OpenID Connect Flow</h2>
+                
+                <!-- Flow Diagram -->
+                <div class="mb-6 bg-green-50 border border-green-200 rounded-md p-4">
+                    <h3 class="text-sm font-medium text-green-800 mb-3">Authentication Flow (Authorization Code)</h3>
+                    <ol class="text-xs text-green-700 space-y-2">
+                        <li class="flex items-start">
+                            <span class="bg-green-200 text-green-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mr-2 mt-0.5">1</span>
+                            User clicks "Test OIDC Authentication Flow"
+                        </li>
+                        <li class="flex items-start">
+                            <span class="bg-green-200 text-green-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mr-2 mt-0.5">2</span>
+                            App redirects to Azure AD authorization endpoint with OIDC scopes
+                        </li>
+                        <li class="flex items-start">
+                            <span class="bg-green-200 text-green-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mr-2 mt-0.5">3</span>
+                            User authenticates with Azure AD (if not already signed in)
+                        </li>
+                        <li class="flex items-start">
+                            <span class="bg-green-200 text-green-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mr-2 mt-0.5">4</span>
+                            Azure AD redirects back with authorization code
+                        </li>
+                        <li class="flex items-start">
+                            <span class="bg-green-200 text-green-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mr-2 mt-0.5">5</span>
+                            App exchanges code for ID token + access token
+                        </li>
+                        <li class="flex items-start">
+                            <span class="bg-green-200 text-green-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mr-2 mt-0.5">6</span>
+                            App validates ID token and displays user information
+                        </li>
+                    </ol>
+                </div>
 
-            <div x-show="generatedUrl" class="flex space-x-4">
-                <a :href="generatedUrl" target="_blank" 
-                   class="flex-1 bg-blue-600 text-white text-center py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">
-                    Test OIDC Flow
-                </a>
-                <button @click="validateUrl()" 
-                        class="flex-1 bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 transition-colors">
-                    Validate URL
-                </button>
-            </div>
+                <!-- OIDC Scopes -->
+                <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                    <h3 class="text-sm font-medium text-blue-800 mb-2">OIDC Scopes Used</h3>
+                    <div class="grid grid-cols-1 gap-2 text-xs text-blue-700">
+                        <div class="flex items-center">
+                            <span class="bg-blue-200 text-blue-800 px-2 py-1 rounded text-xs font-medium mr-2">openid</span>
+                            <span>Required - Enables ID token issuance</span>
+                        </div>
+                                                <div class="flex items-center">
+                            <span class="bg-blue-200 text-blue-800 px-2 py-1 rounded text-xs font-medium mr-2">profile</span>
+                            <span>User's profile information (name, etc.)</span>
+                        </div>
+                     </div>
+                     <div class="bg-yellow-50 border border-yellow-200 rounded p-2 mt-2">
+                         <p class="text-xs text-yellow-700">
+                             <strong>Note:</strong> Azure AD considers scope combinations like ['openid', 'profile'] as reserved. We use only the minimal 'openid' scope for maximum compatibility. Additional user information can be obtained through the UserInfo endpoint.
+                         </p>
+                     </div>
+                 </div>
 
-            <!-- Validation Results -->
-            <div x-show="validationResult" class="mt-4 p-3 rounded-md" :class="validationResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'">
-                <p class="text-sm font-medium" :class="validationResult.success ? 'text-green-800' : 'text-red-800'" x-text="validationResult.message"></p>
+                <!-- Key Features -->
+                <div class="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-md">
+                    <h3 class="text-sm font-medium text-purple-800 mb-2">OIDC Key Features</h3>
+                    <ul class="text-xs text-purple-700 space-y-1">
+                        <li>• <strong>ID Token:</strong> JWT containing user identity claims</li>
+                        <li>• <strong>Access Token:</strong> For API access (Microsoft Graph)</li>
+                        <li>• <strong>Refresh Token:</strong> Long-lived token for renewing access</li>
+                        <li>• <strong>Standard Claims:</strong> sub, iss, aud, exp, iat, nonce</li>
+                        <li>• <strong>Custom Claims:</strong> Based on requested scopes</li>
+                        <li>• <strong>JSON Format:</strong> Easy to parse and validate</li>
+                    </ul>
+                </div>
+
+                <!-- OIDC vs OAuth vs SAML -->
+                <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <h3 class="text-sm font-medium text-yellow-800 mb-2">OIDC vs OAuth 2.0 vs SAML</h3>
+                    <div class="text-xs text-yellow-700 space-y-2">
+                        <div><strong>OIDC:</strong> Identity layer on OAuth 2.0, JSON tokens, modern</div>
+                        <div><strong>OAuth 2.0:</strong> Authorization framework, API access focused</div>
+                        <div><strong>SAML:</strong> XML-based, enterprise SSO, assertion-based</div>
+                    </div>
+                </div>
+
+                <!-- Azure AD URLs -->
+                {% if azure_config.tenant_id != 'your-tenant-id' %}
+                <div class="mt-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Azure AD OIDC Endpoints</label>
+                    <div class="space-y-2 text-sm">
+                        <div>
+                            <span class="font-medium">Authorization:</span>
+                            <div class="font-mono text-xs bg-gray-50 p-2 rounded border break-all">
+                                https://login.microsoftonline.com/{{ azure_config.tenant_id }}/oauth2/v2.0/authorize
+                            </div>
+                        </div>
+                        <div>
+                            <span class="font-medium">Token:</span>
+                            <div class="font-mono text-xs bg-gray-50 p-2 rounded border break-all">
+                                https://login.microsoftonline.com/{{ azure_config.tenant_id }}/oauth2/v2.0/token
+                            </div>
+                        </div>
+                        <div>
+                            <span class="font-medium">OpenID Configuration:</span>
+                            <div class="font-mono text-xs bg-gray-50 p-2 rounded border break-all">
+                                https://login.microsoftonline.com/{{ azure_config.tenant_id }}/v2.0/.well-known/openid_configuration
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 
 <script>
-function oidcBuilder() {
+function oidcFlow() {
     return {
-        config: {
-            baseUrlType: 'common',
-            tenantId: '',
-            clientId: '',
-                            redirectUri: 'http://localhost:3000/auth/callback',
-            scopes: ['openid', 'profile', 'email'],
-            responseType: 'code',
-            nonce: '',
-            state: '',
-            prompt: '',
-            maxAge: '',
-            claims: ''
-        },
-        generatedUrl: '',
-        urlParameters: '',
-        validationResult: null,
-        scopeText: 'openid profile email',
-
-        init() {
-            this.generateRandomValues();
-            this.updateScopesFromText();
-        },
-
-        generateRandomValues() {
-            this.config.state = this.generateRandomString();
-            this.config.nonce = this.generateRandomString();
-        },
-
-        generateRandomString() {
-            return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-        },
-
-        updateTenantId() {
-            if (this.config.baseUrlType !== 'tenant') {
-                this.config.tenantId = this.config.baseUrlType;
-            }
-        },
-
-        toggleScope(scope) {
-            const index = this.config.scopes.indexOf(scope);
-            if (index > -1) {
-                this.config.scopes.splice(index, 1);
-            } else {
-                this.config.scopes.push(scope);
-            }
-            this.scopeText = this.config.scopes.join(' ');
-            
-            // Ensure openid is always included for OIDC
-            if (!this.config.scopes.includes('openid')) {
-                this.config.scopes.unshift('openid');
-                this.scopeText = this.config.scopes.join(' ');
-            }
-        },
-
-        updateScopesFromText() {
-            this.config.scopes = this.scopeText.split(' ').filter(s => s.trim() !== '');
-            // Ensure openid is always included for OIDC
-            if (!this.config.scopes.includes('openid')) {
-                this.config.scopes.unshift('openid');
-                this.scopeText = this.config.scopes.join(' ');
-            }
-        },
-
-        async generateUrl() {
-            try {
-                const response = await fetch('/api/oidc/build-url', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        tenant_id: this.config.tenantId || this.config.baseUrlType,
-                        client_id: this.config.clientId,
-                        redirect_uri: this.config.redirectUri,
-                        scopes: this.config.scopes.join(' '),
-                        response_type: this.config.responseType,
-                        state: this.config.state,
-                        nonce: this.config.nonce,
-                        prompt: this.config.prompt,
-                        max_age: this.config.maxAge,
-                        claims: this.config.claims
-                    })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    this.generatedUrl = result.auth_url;
-                    this.urlParameters = JSON.stringify(result.parameters, null, 2);
-                    this.validationResult = null;
-                } else {
-                    this.validationResult = { success: false, message: result.error };
-                }
-            } catch (error) {
-                this.validationResult = { success: false, message: 'Failed to generate URL: ' + error.message };
-            }
-        },
-
-        validateUrl() {
-            if (!this.generatedUrl) {
-                this.validationResult = { success: false, message: 'No URL to validate' };
-                return;
-            }
-
-            // OIDC validation
-            const required = ['client_id', 'response_type', 'redirect_uri', 'scope', 'nonce'];
-            const url = new URL(this.generatedUrl);
-            const missing = required.filter(param => !url.searchParams.has(param));
-
-            if (missing.length > 0) {
-                this.validationResult = { success: false, message: `Missing required OIDC parameters: ${missing.join(', ')}` };
-                return;
-            }
-
-            // Check if openid scope is present
-            const scope = url.searchParams.get('scope');
-            if (!scope || !scope.includes('openid')) {
-                this.validationResult = { success: false, message: 'OpenID Connect requires "openid" scope' };
-                return;
-            }
-
-            this.validationResult = { success: true, message: 'URL is valid OIDC authorization request' };
-        },
-
+        redirectUri: window.location.origin + '/auth/callback',
+        
         copyToClipboard(text) {
             navigator.clipboard.writeText(text).then(() => {
-                console.log('OIDC URL copied to clipboard');
+                // Show temporary success message
+                const event = new CustomEvent('show-toast', {
+                    detail: { message: 'Copied to clipboard!', type: 'success' }
+                });
+                window.dispatchEvent(event);
+            }).catch(err => {
+                console.error('Failed to copy: ', err);
             });
-        },
-
-        clearForm() {
-            this.config = {
-                baseUrlType: 'common',
-                tenantId: '',
-                clientId: '',
-                redirectUri: 'http://localhost:3000/auth/callback',
-                scopes: ['openid', 'profile', 'email'],
-                responseType: 'code',
-                nonce: '',
-                state: '',
-                prompt: '',
-                maxAge: '',
-                claims: ''
-            };
-            this.scopeText = 'openid profile email';
-            this.generatedUrl = '';
-            this.urlParameters = '';
-            this.validationResult = null;
-            this.generateRandomValues();
         }
     }
 }

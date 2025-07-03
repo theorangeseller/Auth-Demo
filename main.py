@@ -566,7 +566,7 @@ def build_oidc_url():
         tenant_id = data.get('tenant_id', get_azure_config()['tenant_id'])
         client_id = data.get('client_id', get_azure_config()['client_id'])
         redirect_uri = data.get('redirect_uri', get_azure_config()['redirect_uri'])
-        scopes = data.get('scopes', 'openid profile email').split()
+        scopes = data.get('scopes', 'openid').split()
         response_type = data.get('response_type', 'code')
         state = data.get('state', str(uuid.uuid4()))
         nonce = data.get('nonce', str(uuid.uuid4()))
@@ -703,8 +703,9 @@ def oidc_login():
         # Store authentication method in session
         session['auth_method'] = 'oidc'
         
-        # Build authentication flow with OIDC scopes
-        oidc_scopes = ["openid", "profile", "email"] + DEFAULT_SCOPE
+        # Build authentication flow with OIDC scopes only
+        # Note: Azure AD considers ["openid", "profile"] as reserved - using minimal scope
+        oidc_scopes = ["openid"]
         flow = _build_auth_code_flow(scopes=oidc_scopes)
         session['flow'] = flow
         
@@ -780,30 +781,110 @@ def auth_callback():
         if 'error' in request.args:
             return render_template('error.html', error=request.args.get('error_description', 'Authentication failed'))
         
-        if 'flow' not in session:
-            flash('Authentication session expired', 'error')
-            return redirect(url_for('index'))
+        # Check if we have a valid flow in session
+        flow = session.get('flow')
+        if not flow:
+            # If no flow in session, try to reconstruct it for manual URL testing
+            # This handles cases where users click "Test OIDC Flow" from URL builder
+            auth_code = request.args.get('code')
+            state = request.args.get('state')
+            
+            if not auth_code:
+                flash('Authentication session expired and no authorization code received', 'error')
+                return redirect(url_for('index'))
+            
+            # Try to reconstruct the flow using current configuration
+            try:
+                config = get_azure_config()
+                if not is_azure_configured():
+                    flash('Azure AD not configured properly for callback processing', 'error')
+                    return redirect(url_for('configure'))
+                
+                # Build minimal flow for token exchange
+                flow = {
+                    'state': state,
+                    'redirect_uri': config['redirect_uri']
+                }
+                
+                # For OIDC flows, we need to handle the token exchange manually
+                token_url = f"{get_authority()}/oauth2/v2.0/token"
+                
+                token_data = {
+                    'client_id': config['client_id'],
+                    'client_secret': config['client_secret'],
+                    'code': auth_code,
+                    'grant_type': 'authorization_code',
+                    'redirect_uri': config['redirect_uri']
+                }
+                
+                response = requests.post(token_url, data=token_data)
+                if response.status_code != 200:
+                    return render_template('error.html', error=f'Token exchange failed: {response.text}')
+                
+                result = response.json()
+                
+                flash('OIDC authentication successful (reconstructed flow)', 'success')
+                
+            except Exception as e:
+                flash(f'Failed to reconstruct authentication flow: {str(e)}', 'error')
+                return redirect(url_for('index'))
+                
+        else:
+            # Standard flow - complete the authentication flow using MSAL
+            result = _build_msal_app().acquire_token_by_auth_code_flow(
+                session.get('flow', {}), request.args)
+            
+            if 'error' in result:
+                return render_template('error.html', error=result.get('error_description', 'Token acquisition failed'))
         
-        # Complete the authentication flow
-        result = _build_msal_app().acquire_token_by_auth_code_flow(
-            session.get('flow', {}), request.args)
+        # Decode ID token for comprehensive information
+        id_token_decoded = None
+        id_token_header = None
+        if result.get('id_token'):
+            try:
+                # Decode header (contains key ID, algorithm info)
+                import base64
+                import json
+                header_b64 = result['id_token'].split('.')[0]
+                # Add padding if needed
+                header_b64 += '=' * (4 - len(header_b64) % 4)
+                id_token_header = json.loads(base64.urlsafe_b64decode(header_b64))
+                
+                # Decode payload without verification for demo purposes
+                id_token_decoded = jwt.decode(result['id_token'], options={"verify_signature": False})
+            except Exception as e:
+                id_token_decoded = {'error': f'Failed to decode ID token: {str(e)}'}
         
-        if 'error' in result:
-            return render_template('error.html', error=result.get('error_description', 'Token acquisition failed'))
-        
-        # Store tokens and user info in session
-        session['user'] = result.get('id_token_claims')
+        # Store comprehensive user and token information in session
+        session['user'] = result.get('id_token_claims') or id_token_decoded
         session['tokens'] = {
             'access_token': result.get('access_token'),
             'id_token': result.get('id_token'),
             'refresh_token': result.get('refresh_token'),
             'token_type': result.get('token_type', 'Bearer'),
             'expires_in': result.get('expires_in'),
-            'scope': result.get('scope')
+            'scope': result.get('scope'),
+            'acquired_at': datetime.utcnow().isoformat()
         }
         
-        # Get authentication method from session
-        auth_method = session.get('auth_method', 'oauth2')
+        # Store comprehensive OIDC response information for educational purposes
+        session['oidc_response'] = {
+            'id_token_decoded': id_token_decoded,
+            'id_token_header': id_token_header,
+            'has_access_token': bool(result.get('access_token')),
+            'has_refresh_token': bool(result.get('refresh_token')),
+            'token_acquisition_method': 'msal_flow' if flow and 'auth_uri' in flow else 'manual_reconstruction',
+            'scopes_granted': result.get('scope', '').split() if result.get('scope') else [],
+            'expires_in_minutes': result.get('expires_in', 0) // 60 if result.get('expires_in') else 0,
+            'callback_timestamp': datetime.utcnow().isoformat(),
+            'auth_time': id_token_decoded.get('auth_time') if id_token_decoded else None,
+            'nonce_matched': id_token_decoded.get('nonce') if id_token_decoded else None,
+            'issuer': id_token_decoded.get('iss') if id_token_decoded else None,
+            'audience': id_token_decoded.get('aud') if id_token_decoded else None
+        }
+        
+        # Get authentication method from session or default to oidc
+        auth_method = session.get('auth_method', 'oidc')
         
         return redirect(url_for('dashboard', method=auth_method))
         
@@ -1032,20 +1113,28 @@ def dashboard(method):
     user_info = session.get('user', {})
     tokens = session.get('tokens', {})
     
-    # Decode ID token for display
+    # Decode ID token for display (for OAuth2/OIDC)
     id_token_decoded = None
-    if tokens.get('id_token'):
+    if tokens.get('id_token') and method in ['oauth2', 'oidc']:
         try:
             # Decode without verification for demo purposes
             id_token_decoded = jwt.decode(tokens['id_token'], options={"verify_signature": False})
         except Exception as e:
             id_token_decoded = {'error': f'Failed to decode ID token: {str(e)}'}
     
+    # Get method-specific response data
+    method_response = {}
+    if method == 'saml':
+        method_response = session.get('saml_response', {})
+    elif method == 'oidc':
+        method_response = session.get('oidc_response', {})
+    
     return render_template('dashboard.html', 
                          method=method, 
                          user=user_info, 
                          tokens=tokens,
-                         id_token_decoded=id_token_decoded)
+                         id_token_decoded=id_token_decoded,
+                         method_response=method_response)
 
 @app.route('/logout')
 def logout():
@@ -1146,6 +1235,7 @@ def upload_certificate():
         
     except Exception as e:
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=3000)
